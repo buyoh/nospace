@@ -148,6 +148,7 @@ namespace Parser {
         return var * sign;
     }
 
+    // 4 + 5 * 3 + 2
 
     ExpressionStatement get_statement(istream& is) {
 
@@ -176,8 +177,8 @@ namespace Parser {
             case 1: {
                 if (cc == '+') {
                     auto new_ex = new ExpressionStatement(OperationMode::Add);
-                    (*new_ex).args(0) = move(*curr);
-                    curr->reset(new_ex);
+                    (*new_ex).args(0) = move(root);
+                    root.reset(new_ex);
                     curr = &(*new_ex).args(1);
                     is.get();
                     stat = 2;
