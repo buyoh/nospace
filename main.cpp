@@ -96,6 +96,7 @@ namespace Parser {
     enum struct OperationMode {
         Integer,
         Add,
+        Multiply,
         Call
     };
 
@@ -107,11 +108,11 @@ namespace Parser {
 
         void setup() {
             switch (mode_) {
-            case OperationMode::Integer:
-                break;
             case OperationMode::Add:
+            case OperationMode::Multiply:
                 args_.resize(2);
                 break;
+            case OperationMode::Integer:
             case OperationMode::Call:
                 break;
             }
@@ -183,6 +184,14 @@ namespace Parser {
                     is.get();
                     stat = 2;
                 }
+                else if (cc == '*') {
+                    auto new_ex = new ExpressionStatement(OperationMode::Multiply);
+                    (*new_ex).args(0) = move(*curr);
+                    curr->reset(new_ex);
+                    curr = &(*new_ex).args(1);
+                    is.get();
+                    stat = 2;
+                }
                 break;
             }
             }
@@ -230,6 +239,11 @@ namespace Compiler {
             convert_statement(whitesp, exps[0]);
             convert_statement(whitesp, exps[1]);
             whitesp.push(Instruments::Arithmetic::add);
+            return whitesp;
+        case OperationMode::Multiply:
+            convert_statement(whitesp, exps[0]);
+            convert_statement(whitesp, exps[1]);
+            whitesp.push(Instruments::Arithmetic::mul);
             return whitesp;
         }
         throw OperatorException();
