@@ -26,7 +26,7 @@ namespace WS {
             for (auto c : cl) push(c);
         }
         template<size_t size>
-        inline void push(const Chr (&cl)[size]) {
+        inline void push(const Chr(&cl)[size]) {
             for (auto c : cl) push(c);
         }
         inline void push(int c) {
@@ -40,7 +40,7 @@ namespace WS {
         }
 
         inline void print(ostream& os) const {
-            static const char convert[] = {32,9,10,0,0,0,0,0};
+            static const char convert[] = { 32,9,10,0,0,0,0,0 };
             for (auto c : raw)
                 os << convert[static_cast<size_t>(c)];
         }
@@ -93,13 +93,47 @@ namespace Parser {
     };
 
 
-    class ExpressionStatement {
-    public:
-        vector<integer> values;
+    enum struct OperationMode {
+        Integer,
+        Add,
+        Call
+    };
 
-        void push(integer val) {
-            values.push_back(val);
+
+    class ExpressionStatement {
+        const OperationMode mode_;
+        const integer val_;
+        vector<unique_ptr<ExpressionStatement>> args_;
+
+        void setup() {
+            switch (mode_) {
+            case OperationMode::Integer:
+                break;
+            case OperationMode::Add:
+                args_.resize(2);
+                break;
+            case OperationMode::Call:
+                break;
+            }
         }
+    public:
+        ExpressionStatement(OperationMode _mode = OperationMode::Integer, integer _val = 0)
+            : mode_(_mode), val_(_val) {
+            setup(); 
+        }
+
+        inline decltype(val_) val() const { return val_; }
+        inline decltype(mode_) mode() const { return mode_; }
+
+        inline decltype(args_)::value_type& args (int i) { return args_[i]; }
+        inline const decltype(args_)::value_type& args (int i) const { return args_[i]; }
+
+        inline ExpressionStatement& operator[](int i) { return *args_[i]; }
+        inline const ExpressionStatement& operator[](int i) const { return *args_[i]; }
+
+        inline void resizeArgs(int size) { args_.resize(size); }
+
+
     };
 
     // isdigit
@@ -116,7 +150,10 @@ namespace Parser {
 
 
     ExpressionStatement get_statement(istream& is) {
-        ExpressionStatement ex;
+
+        unique_ptr<ExpressionStatement> root;
+        unique_ptr<ExpressionStatement>* curr = &root;
+
         int stat = 0;
         while (!is.eof()) {
             int cc = is.peek();
@@ -124,19 +161,24 @@ namespace Parser {
             if (isspace(cc)) {
                 is.get(); continue;
             }
-            
+
             switch (stat) {
             case 0:
             case 2: {
                 if (isdigit(cc) || cc == '-') {
                     integer val = get_number<integer>(is);
-                    ex.push(val);
+                    assert(!(*curr));
+                    curr->reset(new ExpressionStatement(OperationMode::Integer, val));
                     stat = 1;
                 }
                 break;
             }
             case 1: {
                 if (cc == '+') {
+                    auto new_ex = new ExpressionStatement(OperationMode::Add);
+                    (*new_ex).args(0) = move(*curr);
+                    curr->reset(new_ex);
+                    curr = &(*new_ex).args(1);
                     is.get();
                     stat = 2;
                 }
@@ -144,7 +186,7 @@ namespace Parser {
             }
             }
         }
-        if (stat == 1) return ex;
+        if (stat == 1) return move(*root);
         else throw ParseException();
     }
 }
@@ -155,6 +197,11 @@ namespace Parser {
 namespace Compiler {
     using namespace WS;
     using namespace Parser;
+
+
+    class OperatorException : exception {
+
+    };
 
 
     //
@@ -171,17 +218,20 @@ namespace Compiler {
 
 
     WhiteSpace& convert_statement(WhiteSpace& whitesp, const ExpressionStatement& exps) {
-        cerr << exps.values.size() << endl;
-        assert(exps.values.size() == 2);
 
-        auto it = exps.values.begin();
-        whitesp.push(Instruments::Stack::push);
-        convert_integer(whitesp, *it); ++it;
-        whitesp.push(Instruments::Stack::push);
-        convert_integer(whitesp, *it);
-        whitesp.push(Instruments::Arithmetic::add);
-
-        return whitesp;
+        switch (exps.mode())
+        {
+        case OperationMode::Integer:
+            whitesp.push(Instruments::Stack::push);
+            convert_integer(whitesp, exps.val());
+            return whitesp;
+        case OperationMode::Add:
+            convert_statement(whitesp, exps[0]);
+            convert_statement(whitesp, exps[1]);
+            whitesp.push(Instruments::Arithmetic::add);
+            return whitesp;
+        }
+        throw OperatorException();
     }
 }
 
