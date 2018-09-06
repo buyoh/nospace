@@ -103,10 +103,10 @@ namespace Parser {
         Call
     };
 
-    inline int OperationLevel(OperationMode mode) {
-        static const int lev[] = { 0,4,4,5,5,2 };
-        return lev[size_t(mode)];
-    }
+    // inline int OperationLevel(OperationMode mode) {
+    //     static const int lev[] = { 0,4,4,5,5,2 };
+    //     return lev[size_t(mode)];
+    // }
 
 
     class ExpressionStatement {
@@ -161,25 +161,7 @@ namespace Parser {
     }
 
 
-    ExpressionStatement getSingleStatement(istream& is) {
-
-        while (!is.eof()) {
-            int cc = is.peek();
-
-            if (isspace(cc)) {
-                is.get(); continue;
-            }
-
-            if (isdigit(cc) || cc == '-') {
-                integer val = getNumber<integer>(is);
-                return ExpressionStatement(OperationMode::Integer, val);
-            }
-            throw ParseException();
-        }
-        throw ParseException();
-    }
-
-    ExpressionStatement getStatementD5(istream& is) {
+    ExpressionStatement getStatement(istream& is, int level) {
 
         unique_ptr<ExpressionStatement> root;
         unique_ptr<ExpressionStatement>* curr = &root;
@@ -197,69 +179,57 @@ namespace Parser {
             case 2: {
                 if (isdigit(cc) || cc == '-') {
                     assert(!(*curr));
-                    curr->reset(new ExpressionStatement(getSingleStatement(is)));
-                    stat = 1;
+                    if (level < 3) {
+                        curr->reset(new ExpressionStatement(getStatement(is, level + 1)));
+                        stat = 1;
+                    }
+                    else if (level == 3) {
+                        if (isdigit(cc) || cc == '-') {
+                            integer val = getNumber<integer>(is);
+                            return ExpressionStatement(OperationMode::Integer, val);
+                        }
+                    }
                 }
                 break;
             }
             case 1: {
                 if (cc == '+' || cc == '-') {
-                    return move(*root);
+
+                    if (level < 1) {
+                        throw ParseException("internal error?");
+                    }
+                    else if (level == 1) {
+                        auto new_ex = new ExpressionStatement(
+                            cc == '-' ? OperationMode::Subtract : OperationMode::Add);
+                        (*new_ex).args(0) = move(root);
+                        root.reset(new_ex);
+                        curr = &(*new_ex).args(1);
+                        is.get();
+                        stat = 2;
+                    }
+                    else if (level > 1) {
+                        return move(*root);
+                    }
                 }
                 else if (cc == '*' || cc == '/' || cc == '%') {
-                    auto new_ex = new ExpressionStatement(
-                        cc == '/' ? OperationMode::Divide :
-                        cc == '%' ? OperationMode::Modulo :
-                        OperationMode::Multiply);
-                    (*new_ex).args(0) = move(root);
-                    root.reset(new_ex);
-                    curr = &(*new_ex).args(1);
-                    is.get();
-                    stat = 2;
-                }
-                break;
-            }
-            }
-        }
-        if (stat == 1) return move(*root);
-        else throw ParseException();
-    }
-
-    ExpressionStatement getStatementD4(istream& is) {
-
-        unique_ptr<ExpressionStatement> root;
-        unique_ptr<ExpressionStatement>* curr = &root;
-
-        int stat = 0;
-        while (!is.eof()) {
-            int cc = is.peek();
-
-            if (isspace(cc)) {
-                is.get(); continue;
-            }
-
-            switch (stat) {
-            case 0:
-            case 2: {
-                if (isdigit(cc) || cc == '-') {
-                    assert(!(*curr));
-                    curr->reset(new ExpressionStatement(getStatementD5(is)));
-                    stat = 1;
-                }
-                break;
-            }
-            case 1: {
-                if (cc == '+' || cc == '-') {
-                    auto new_ex = new ExpressionStatement(
-                        cc == '-' ? OperationMode::Subtract : OperationMode::Add);
-                    (*new_ex).args(0) = move(root);
-                    root.reset(new_ex);
-                    curr = &(*new_ex).args(1);
-                    is.get();
-                    stat = 2;
-                }
-                else if (cc == '*' || cc == '/' || cc == '%') {
-                    throw ParseException("fusigi");
+                    if (level < 2) {
+                        throw ParseException("internal error?");
+                    }
+                    else if (level == 2) {
+                        auto new_ex = new ExpressionStatement(
+                            cc == '/' ? OperationMode::Divide :
+                            cc == '%' ? OperationMode::Modulo :
+                            OperationMode::Multiply);
+                        (*new_ex).args(0) = move(root);
+                        root.reset(new_ex);
+                        curr = &(*new_ex).args(1);
+                        is.get();
+                        stat = 2;
+                    }
+                    else if (level > 2) {
+                        return move(*root);
+                    }
+                    
                 }
                 break;
             }
@@ -271,7 +241,7 @@ namespace Parser {
 
 
     ExpressionStatement getStatement(istream& is) {
-        return getStatementD4(is);
+        return getStatement(is, 1);
     }
 }
 
