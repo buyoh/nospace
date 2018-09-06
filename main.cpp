@@ -321,26 +321,28 @@ namespace Compiler {
             case 2: {
                 if (typeis<TokenInteger>(token)) {
                     assert(!(*curr));
-                    if (level < 3) {
+                    if (level < 4) {
                         curr->reset(new ExpressionStatement(getStatement(stream, level + 1)));
                         stat = 1;
                         break;
                     }
-                    else if (level == 3) {
+                    else if (level == 4) {
                         integer val = dynamic_cast<const TokenInteger&>(token).get();
                         stream.get();
                         return ExpressionStatement(OperationMode::Integer, intsign*val);
                     }
                 }
                 if (typeis<TokenSymbol>(token)) {
+                    const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
                     assert(!(*curr));
                     if (level < 3) {
-                        curr->reset(new ExpressionStatement(getStatement(stream, level + 1)));
-                        stat = 1;
-                        break;
+                        if (tokenSymbol == '-') {
+                            curr->reset(new ExpressionStatement(getStatement(stream, level + 1)));
+                            stat = 1;
+                            break;
+                        }
                     }
                     else if (level == 3) {
-                        const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
                         if (tokenSymbol == '-') {
                             stream.get();
                             intsign *= -1;
