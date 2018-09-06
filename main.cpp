@@ -88,17 +88,25 @@ namespace WS {
 namespace Parser {
 
 
-    class ParseException : exception {
-
+    struct ParseException : runtime_error {
+        ParseException(const char* msg = "") :runtime_error(msg) { }
     };
 
 
     enum struct OperationMode {
         Integer,
         Add,
+        Subtract,
         Multiply,
+        Divide,
+        Modulo,
         Call
     };
+
+    inline int OperationLevel(OperationMode mode) {
+        static const int lev[] = { 0,4,4,5,5,2 };
+        return lev[size_t(mode)];
+    }
 
 
     class ExpressionStatement {
@@ -109,7 +117,10 @@ namespace Parser {
         void setup() {
             switch (mode_) {
             case OperationMode::Add:
+            case OperationMode::Subtract:
             case OperationMode::Multiply:
+            case OperationMode::Divide:
+            case OperationMode::Modulo:
                 args_.resize(2);
                 break;
             case OperationMode::Integer:
@@ -120,14 +131,14 @@ namespace Parser {
     public:
         ExpressionStatement(OperationMode _mode = OperationMode::Integer, integer _val = 0)
             : mode_(_mode), val_(_val) {
-            setup(); 
+            setup();
         }
 
         inline decltype(val_) val() const { return val_; }
         inline decltype(mode_) mode() const { return mode_; }
 
-        inline decltype(args_)::value_type& args (int i) { return args_[i]; }
-        inline const decltype(args_)::value_type& args (int i) const { return args_[i]; }
+        inline decltype(args_)::value_type& args(int i) { return args_[i]; }
+        inline const decltype(args_)::value_type& args(int i) const { return args_[i]; }
 
         inline ExpressionStatement& operator[](int i) { return *args_[i]; }
         inline const ExpressionStatement& operator[](int i) const { return *args_[i]; }
@@ -139,7 +150,7 @@ namespace Parser {
 
     // isdigit
 
-    template<typename T> T get_number(istream& is) {
+    template<typename T> T getNumber(istream& is) {
         T var = 0; T sign = 1;
         int cc = is.peek();
         for (; (cc < '0' || '9' < cc) && cc != istream::traits_type::eof(); is.get(), cc = is.peek())
@@ -149,9 +160,26 @@ namespace Parser {
         return var * sign;
     }
 
-    // 4 + 5 * 3 + 2
 
-    ExpressionStatement get_statement(istream& is) {
+    ExpressionStatement getSingleStatement(istream& is) {
+
+        while (!is.eof()) {
+            int cc = is.peek();
+
+            if (isspace(cc)) {
+                is.get(); continue;
+            }
+
+            if (isdigit(cc) || cc == '-') {
+                integer val = getNumber<integer>(is);
+                return ExpressionStatement(OperationMode::Integer, val);
+            }
+            throw ParseException();
+        }
+        throw ParseException();
+    }
+
+    ExpressionStatement getStatementD5(istream& is) {
 
         unique_ptr<ExpressionStatement> root;
         unique_ptr<ExpressionStatement>* curr = &root;
@@ -168,26 +196,23 @@ namespace Parser {
             case 0:
             case 2: {
                 if (isdigit(cc) || cc == '-') {
-                    integer val = get_number<integer>(is);
                     assert(!(*curr));
-                    curr->reset(new ExpressionStatement(OperationMode::Integer, val));
+                    curr->reset(new ExpressionStatement(getSingleStatement(is)));
                     stat = 1;
                 }
                 break;
             }
             case 1: {
-                if (cc == '+') {
-                    auto new_ex = new ExpressionStatement(OperationMode::Add);
+                if (cc == '+' || cc == '-') {
+                    return move(*root);
+                }
+                else if (cc == '*' || cc == '/' || cc == '%') {
+                    auto new_ex = new ExpressionStatement(
+                        cc == '/' ? OperationMode::Divide :
+                        cc == '%' ? OperationMode::Modulo :
+                        OperationMode::Multiply);
                     (*new_ex).args(0) = move(root);
                     root.reset(new_ex);
-                    curr = &(*new_ex).args(1);
-                    is.get();
-                    stat = 2;
-                }
-                else if (cc == '*') {
-                    auto new_ex = new ExpressionStatement(OperationMode::Multiply);
-                    (*new_ex).args(0) = move(*curr);
-                    curr->reset(new_ex);
                     curr = &(*new_ex).args(1);
                     is.get();
                     stat = 2;
@@ -199,6 +224,55 @@ namespace Parser {
         if (stat == 1) return move(*root);
         else throw ParseException();
     }
+
+    ExpressionStatement getStatementD4(istream& is) {
+
+        unique_ptr<ExpressionStatement> root;
+        unique_ptr<ExpressionStatement>* curr = &root;
+
+        int stat = 0;
+        while (!is.eof()) {
+            int cc = is.peek();
+
+            if (isspace(cc)) {
+                is.get(); continue;
+            }
+
+            switch (stat) {
+            case 0:
+            case 2: {
+                if (isdigit(cc) || cc == '-') {
+                    assert(!(*curr));
+                    curr->reset(new ExpressionStatement(getStatementD5(is)));
+                    stat = 1;
+                }
+                break;
+            }
+            case 1: {
+                if (cc == '+' || cc == '-') {
+                    auto new_ex = new ExpressionStatement(
+                        cc == '-' ? OperationMode::Subtract : OperationMode::Add);
+                    (*new_ex).args(0) = move(root);
+                    root.reset(new_ex);
+                    curr = &(*new_ex).args(1);
+                    is.get();
+                    stat = 2;
+                }
+                else if (cc == '*' || cc == '/' || cc == '%') {
+                    throw ParseException("fusigi");
+                }
+                break;
+            }
+            }
+        }
+        if (stat == 1) return move(*root);
+        else throw ParseException();
+    }
+
+
+    ExpressionStatement getStatement(istream& is) {
+        return getStatementD4(is);
+    }
 }
 
 
@@ -209,8 +283,8 @@ namespace Compiler {
     using namespace Parser;
 
 
-    class OperatorException : exception {
-
+    struct OperatorException : runtime_error {
+        OperatorException(const char* msg = "") :runtime_error(msg) { }
     };
 
 
@@ -219,8 +293,17 @@ namespace Compiler {
     WhiteSpace& convert_integer(WhiteSpace& whitesp, integer val) {
 
         // 雑
-        for (int i = sizeof(integer) * 8 - 1; 0 <= i; --i)
-            whitesp.push((val >> i) & 1);
+        if (val < 0) {
+            whitesp.push(Chr::TB);
+            val = -val;
+        }
+        else {
+            whitesp.push(Chr::SP);
+
+        }
+        uint64_t uval = val;
+        for (int i = 62; 0 <= i; --i)
+            whitesp.push((uval & (1ull << i)) >> i);
 
         whitesp.push(Chr::LF);
         return whitesp;
@@ -240,10 +323,25 @@ namespace Compiler {
             convert_statement(whitesp, exps[1]);
             whitesp.push(Instruments::Arithmetic::add);
             return whitesp;
+        case OperationMode::Subtract:
+            convert_statement(whitesp, exps[0]);
+            convert_statement(whitesp, exps[1]);
+            whitesp.push(Instruments::Arithmetic::sub);
+            return whitesp;
         case OperationMode::Multiply:
             convert_statement(whitesp, exps[0]);
             convert_statement(whitesp, exps[1]);
             whitesp.push(Instruments::Arithmetic::mul);
+            return whitesp;
+        case OperationMode::Divide:
+            convert_statement(whitesp, exps[0]);
+            convert_statement(whitesp, exps[1]);
+            whitesp.push(Instruments::Arithmetic::div);
+            return whitesp;
+        case OperationMode::Modulo:
+            convert_statement(whitesp, exps[0]);
+            convert_statement(whitesp, exps[1]);
+            whitesp.push(Instruments::Arithmetic::mod);
             return whitesp;
         }
         throw OperatorException();
@@ -256,7 +354,7 @@ int main() {
     using namespace Parser;
     using namespace Compiler;
 
-    ExpressionStatement st = get_statement(cin);
+    ExpressionStatement st = getStatement(cin);
 
     WhiteSpace code;
     convert_statement(code, st);

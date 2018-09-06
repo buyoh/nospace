@@ -24,22 +24,20 @@ module WhitespaceCompiler
     
     
     def parse_int(io)
-        dcnt = 0
+        sign = 0
         val = 0
         loop do
             c = readchar(io)
             if c == :lf
-                raise WhitespaceParseError.new(io) if dcnt == 0
-                return 0 if dcnt == 1
-                return val
+                raise WhitespaceParseError.new(io) if sign == 0
+                return sign*val
             end
-            if dcnt == 0
-                val = c == :tb ? -1 : 0
+            if sign == 0
+                sign = c == :tb ? -1 : 1
             else
                 val = (val << 1)
                 val |= 1 if c == :tb
             end
-            dcnt += 1
         end
     end
     

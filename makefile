@@ -1,6 +1,6 @@
 .PHONY: debug
 debug: main.cpp
-	g++ -std=c++17 -O0 -g main.cpp -o maicomp
+	g++ -std=c++17 -O0 -Wall -g main.cpp -o maicomp
 
 .PHONY: release
 release: main.cpp

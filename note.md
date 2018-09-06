@@ -16,3 +16,9 @@ add some numbers and print the answer.
 ### progress 4
 
 calculate(add/multiply) some numbers and print the answer.
+
+### progress 5
+
+calculate(add/sub/mul/div/mod) some numbers and print the answer.
+
+ whitespace interpreter(ws.rb)の負数表現が間違っていたので(ws.rb)側の修正を含む．
