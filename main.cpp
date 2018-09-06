@@ -101,6 +101,7 @@ namespace Parser {
     struct Token {
         virtual ~Token(){}
         virtual bool operator==(const Token& t) const = 0;
+        virtual bool operator==(const string& s) const = 0;
     };
 
 
@@ -127,6 +128,9 @@ namespace Parser {
 
         inline bool operator==(const TokenInteger& t) const {
             return value_ == t.value_;
+        }
+        inline bool operator==(const string& str) const {
+            return false;
         }
         inline bool operator==(const Token& t) const {
             try {
@@ -321,12 +325,12 @@ namespace Compiler {
             case 2: {
                 if (typeis<TokenInteger>(token)) {
                     assert(!(*curr));
-                    if (level < 4) {
+                    if (level < 3) {
                         curr->reset(new ExpressionStatement(getStatement(stream, level + 1)));
                         stat = 1;
                         break;
                     }
-                    else if (level == 4) {
+                    else if (level == 3) {
                         integer val = dynamic_cast<const TokenInteger&>(token).get();
                         stream.get();
                         return ExpressionStatement(OperationMode::Integer, intsign*val);
@@ -335,7 +339,19 @@ namespace Compiler {
                 if (typeis<TokenSymbol>(token)) {
                     const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
                     assert(!(*curr));
-                    if (level < 3) {
+
+                    if (tokenSymbol == '(') {
+                        stream.get();
+                        curr->reset(new ExpressionStatement(getStatement(stream, 0)));
+                        if (stream.peek() == ")") {
+                            stat = 1;
+                            stream.get();
+                            break;
+                        }
+                        else
+                            throw CompileException();
+                    }
+                    if (level < 3) { // todo: level
                         if (tokenSymbol == '-') {
                             curr->reset(new ExpressionStatement(getStatement(stream, level + 1)));
                             stat = 1;
@@ -394,15 +410,16 @@ namespace Compiler {
                         else if (level > 2) {
                             return move(*root);
                         }
-
+                    }
+                    else if (tokenSymbol == ';' || tokenSymbol == ')') {
+                        return move(*root);
                     }
                 }
                 throw CompileException();
             }
             }
         }
-        if (stat == 1) return move(*root);
-        else throw CompileException();
+        throw CompileException();
     }
 
 
@@ -493,11 +510,14 @@ int main() {
 
     TokenStream ts(parseToTokens(cin));
 
-    ExpressionStatement st = getStatement(ts);
-
     WhiteSpace code;
-    convert_statement(code, st);
-    code.push(Instruments::IO::putnumber);
+
+    while (!ts.eof()) {
+        ExpressionStatement st = getStatement(ts);
+        convert_statement(code, st);
+        code.push(Instruments::IO::putnumber);
+        ts.get();
+    }
     code.push(Instruments::Flow::exit);
 
     cout << code << flush;

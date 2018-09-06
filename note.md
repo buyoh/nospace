@@ -22,3 +22,11 @@ calculate(add/multiply) some numbers and print the answer.
 calculate(add/sub/mul/div/mod) some numbers and print the answer.
 
  whitespace interpreter(ws.rb)の負数表現が間違っていたので(ws.rb)側の修正を含む．
+
+### progress 6
+
+calculate(you can use brackets) some statements and print the answers.
+
+### progress 7
+
+
