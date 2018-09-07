@@ -200,17 +200,22 @@ namespace Parser {
 
 
     TokenInteger parseInteger(istream& is) {
-        integer var = 0; integer sign = 1;
+        integer var = 0;
         int cc = is.peek();
-        for (; (cc < '0' || '9' < cc) && cc != istream::traits_type::eof(); is.get(), cc = is.peek())
-            ;// if (cc == '-') sign = -1;
-        for (; '0' <= cc && cc <= '9' && cc != istream::traits_type::eof(); is.get(), cc = is.peek())
+        for (; isdigit(cc) && cc != istream::traits_type::eof(); is.get(), cc = is.peek())
             var = (var << 3) + (var << 1) + cc - '0';
-        return TokenInteger(var * sign);
+        return TokenInteger(var);
     }
 
 
-    // TokenKeyword parseKeyword(istream& is)
+    TokenKeyword parseKeyword(istream& is) {
+        string str;
+        int cc = is.peek();
+        for (; (isdigit(cc) || isalpha(cc) || cc == '_') &&
+            cc != istream::traits_type::eof(); is.get(), cc = is.peek())
+            str.push_back(cc);
+        return TokenKeyword(str);
+    }
 
 
     TokenSymbol parseSymbol(istream& is) {
@@ -233,11 +238,15 @@ namespace Parser {
                 tokens.emplace_back(new TokenInteger(parseInteger(is)));
                 continue;
             }
+            if (isalpha(cc) || cc == '_') {
+                tokens.emplace_back(new TokenKeyword(parseKeyword(is)));
+                continue;
+            }
             if (isValidSymbol(cc)) {
                 tokens.emplace_back(new TokenSymbol(parseSymbol(is)));
                 continue;
             }
-            is.get();
+            is.get(); // ignore
         }
         return move(tokens);
     }
@@ -255,12 +264,14 @@ namespace Compiler {
 
 
     enum struct OperationMode {
-        Integer,
+        Value,
+        Minus,
         Add,
         Subtract,
         Multiply,
         Divide,
         Modulo,
+        Assign,
         Call
     };
 
@@ -272,7 +283,7 @@ namespace Compiler {
 
     class ExpressionStatement {
         const OperationMode mode_;
-        const integer val_;
+        integer val_;
         vector<unique_ptr<ExpressionStatement>> args_;
 
         void setup() {
@@ -282,18 +293,24 @@ namespace Compiler {
             case OperationMode::Multiply:
             case OperationMode::Divide:
             case OperationMode::Modulo:
+            case OperationMode::Assign:
                 args_.resize(2);
                 break;
-            case OperationMode::Integer:
+            case OperationMode::Minus:
+                args_.resize(1);
+                break;
+            case OperationMode::Value:
             case OperationMode::Call:
                 break;
             }
         }
     public:
-        ExpressionStatement(OperationMode _mode = OperationMode::Integer, integer _val = 0)
+        ExpressionStatement(OperationMode _mode = OperationMode::Value, integer _val = 0)
             : mode_(_mode), val_(_val) {
             setup();
         }
+
+        inline decltype(val_)& val() { return val_; }
 
         inline decltype(val_) val() const { return val_; }
         inline decltype(mode_) mode() const { return mode_; }
@@ -333,7 +350,7 @@ namespace Compiler {
                     else if (level == 3) {
                         integer val = dynamic_cast<const TokenInteger&>(token).get();
                         stream.get();
-                        return ExpressionStatement(OperationMode::Integer, intsign*val);
+                        return ExpressionStatement(OperationMode::Value, intsign*val);
                     }
                 }
                 if (typeis<TokenSymbol>(token)) {
@@ -351,9 +368,19 @@ namespace Compiler {
                         else
                             throw CompileException();
                     }
+
                     if (level < 3) { // todo: level
                         if (tokenSymbol == '-') {
-                            curr->reset(new ExpressionStatement(getStatement(stream, level + 1)));
+                            stream.get();
+                            auto stp = new ExpressionStatement(getStatement(stream, level + 1));
+                            if (stp->mode() == OperationMode::Value) {
+                                stp->val() *= -1;
+                                curr->reset(stp);
+                            }
+                            else {
+                                curr->reset(new ExpressionStatement(OperationMode::Minus));
+                                (*curr)->args(0).reset(stp);
+                            }
                             stat = 1;
                             break;
                         }
@@ -431,6 +458,7 @@ namespace Compiler {
 
 //
 
+
 namespace Builder {
     using namespace WS;
     using namespace Compiler;
@@ -467,9 +495,15 @@ namespace Builder {
 
         switch (exps.mode())
         {
-        case OperationMode::Integer:
+        case OperationMode::Value:
             whitesp.push(Instruments::Stack::push);
             convert_integer(whitesp, exps.val());
+            return whitesp;
+        case OperationMode::Minus:
+            whitesp.push(Instruments::Stack::push);
+            whitesp.push({ Chr::SP, Chr::LF }); // zero
+            convert_statement(whitesp, exps[0]);
+            whitesp.push(Instruments::Arithmetic::sub);
             return whitesp;
         case OperationMode::Add:
             convert_statement(whitesp, exps[0]);
@@ -500,6 +534,7 @@ namespace Builder {
         throw OperatorException();
     }
 }
+
 
 
 int main() {

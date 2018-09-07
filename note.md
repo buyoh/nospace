@@ -29,4 +29,8 @@ calculate(you can use brackets) some statements and print the answers.
 
 ### progress 7
 
+`-` as unary operation. `-(2+3)` is valid.
 
+### progress 8
+
+- we can use variables.
