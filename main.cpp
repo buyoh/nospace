@@ -12,6 +12,11 @@ inline bool typeis(const U& a1) {
 }
 
 
+struct TODOChottomatteneException : public runtime_error {
+    TODOChottomatteneException() :runtime_error("") { }
+};
+
+
 namespace WS {
 
     enum struct Chr {
@@ -99,7 +104,7 @@ namespace Parser {
 
 
     struct Token {
-        virtual ~Token(){}
+        virtual ~Token() {}
         virtual bool operator==(const Token& t) const = 0;
         virtual bool operator==(const string& s) const = 0;
     };
@@ -109,7 +114,7 @@ namespace Parser {
         vector<unique_ptr<Token>> tokens_;
         size_t ptr;
     public:
-        TokenStream():ptr(0){}
+        TokenStream() :ptr(0) {}
         TokenStream(vector<unique_ptr<Token>>&& _tokens) :tokens_(move(_tokens)), ptr(0) { }
 
         const Token& get() { return *tokens_[ptr++]; }
@@ -122,7 +127,7 @@ namespace Parser {
     class TokenInteger : public Token {
         const integer value_;
     public:
-        TokenInteger(integer _val):value_(_val){}
+        TokenInteger(integer _val) :value_(_val) {}
 
         inline integer get() const { return value_; }
 
@@ -168,7 +173,7 @@ namespace Parser {
     class TokenSymbol : public Token {
         const char _symbol[4];
     public:
-        TokenSymbol(char _s1) :_symbol{_s1,0,0,0} {}
+        TokenSymbol(char _s1) :_symbol{ _s1,0,0,0 } {}
         TokenSymbol(char _s1, char _s2) :_symbol{ _s1,_s2,0 } {}
         TokenSymbol(char _s1, char _s2, char _s3) :_symbol{ _s1,_s2,_s3,0 } {}
 
@@ -193,7 +198,7 @@ namespace Parser {
 
 
     inline bool isValidSymbol(char c) {
-        static bool f[] = {0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0 };
+        static bool f[] = { 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0 };
         return (32 <= c && c < 128) ? f[c - 32] : false;
     }
 
@@ -281,9 +286,33 @@ namespace Compiler {
     // }
 
 
+    struct ExpressionFactor {
+        virtual ~ExpressionFactor() {}
+    };
+
+    class ExpressionValue : public ExpressionFactor {
+        integer val_;
+    public:
+        ExpressionValue(integer _val) :val_(_val) { }
+
+        inline integer& get() { return val_; }
+        inline integer get() const { return val_; }
+    };
+
+    class ExpressionVariable : public ExpressionFactor {
+        size_t addr_;
+    public:
+        ExpressionVariable(size_t _addr) :addr_(_addr) { }
+
+        inline size_t& get() { return addr_; }
+        inline size_t get() const { return addr_; }
+    };
+
+
     class ExpressionStatement {
         const OperationMode mode_;
-        integer val_;
+        //integer val_;
+        unique_ptr<ExpressionFactor> factor_;
         vector<unique_ptr<ExpressionStatement>> args_;
 
         void setup() {
@@ -305,15 +334,26 @@ namespace Compiler {
             }
         }
     public:
-        ExpressionStatement(OperationMode _mode = OperationMode::Value, integer _val = 0)
-            : mode_(_mode), val_(_val) {
+        ExpressionStatement(OperationMode _mode)
+            : mode_(_mode) {
+            setup();
+        }
+        ExpressionStatement(ExpressionValue&& _factor)
+            : mode_(OperationMode::Value), factor_(new ExpressionValue(_factor)) {
+            setup();
+        }
+        ExpressionStatement(ExpressionVariable&& _factor)
+            : mode_(OperationMode::Value), factor_(new ExpressionVariable(_factor)) {
             setup();
         }
 
-        inline decltype(val_)& val() { return val_; }
+        inline ExpressionFactor& factor() const { return *factor_; }
+        inline OperationMode mode() const { return mode_; }
 
-        inline decltype(val_) val() const { return val_; }
-        inline decltype(mode_) mode() const { return mode_; }
+        // OperationMode::Value かつ factor が ExpressionVariable である
+        inline bool isLvalue() const {
+            return mode_ == OperationMode::Value && typeis<ExpressionVariable>(*factor_);
+        }
 
         inline decltype(args_)::value_type& args(int i) { return args_[i]; }
         inline const decltype(args_)::value_type& args(int i) const { return args_[i]; }
@@ -326,14 +366,14 @@ namespace Compiler {
 
     };
 
-       
+
     ExpressionStatement getStatement(TokenStream& stream, int level) {
 
         unique_ptr<ExpressionStatement> root;
         unique_ptr<ExpressionStatement>* curr = &root;
 
-        integer intsign = 1;
-        int stat = 0;
+        // integer intsign = 1;
+        int stat = 0; // << memo: global?
         while (!stream.eof()) {
             const Token& token = stream.peek();
 
@@ -342,39 +382,67 @@ namespace Compiler {
             case 2: {
                 if (typeis<TokenInteger>(token)) {
                     assert(!(*curr));
-                    if (level < 3) {
+
+                    if (level < 5) {
                         curr->reset(new ExpressionStatement(getStatement(stream, level + 1)));
                         stat = 1;
                         break;
                     }
-                    else if (level == 3) {
+                    else if (level == 5) {
                         integer val = dynamic_cast<const TokenInteger&>(token).get();
                         stream.get();
-                        return ExpressionStatement(OperationMode::Value, intsign*val);
+                        return ExpressionStatement(ExpressionValue(val));
                     }
                 }
-                if (typeis<TokenSymbol>(token)) {
+                else if (typeis<TokenKeyword>(token)) {
+                    const auto& tokenKeyword = dynamic_cast<const TokenKeyword&>(token);
+                    assert(!(*curr));
+                    assert(tokenKeyword == "abc"); // TODO: 
+
+                    if (level < 5) {
+                        curr->reset(new ExpressionStatement(getStatement(stream, level + 1)));
+                        stat = 1;
+                        break;
+                    }
+                    else if (level == 5) {
+                        stream.get();
+                        return ExpressionStatement(ExpressionVariable(0)); // nametableが無いので
+                    }
+                }
+                else if (typeis<TokenSymbol>(token)) {
                     const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
                     assert(!(*curr));
 
                     if (tokenSymbol == '(') {
-                        stream.get();
-                        curr->reset(new ExpressionStatement(getStatement(stream, 0)));
-                        if (stream.peek() == ")") {
+                        if (level < 6) {
+                            curr->reset(new ExpressionStatement(getStatement(stream, level + 1)));
                             stat = 1;
-                            stream.get();
                             break;
                         }
-                        else
-                            throw CompileException();
+                        else if (level == 6) {
+                            stream.get();
+                            curr->reset(new ExpressionStatement(getStatement(stream, 1)));
+                            if (stream.peek() == ")") {
+                                stat = 1;
+                                stream.get();
+                                break;
+                            }
+                            else
+                                throw CompileException();
+                        }
                     }
 
-                    if (level < 3) { // todo: level
-                        if (tokenSymbol == '-') {
+                    if (tokenSymbol == '-') {
+                        if (level < 4) {
+                            curr->reset(new ExpressionStatement(getStatement(stream, level + 1)));
+                            stat = 1;
+                            break;
+                        }
+                        else if (level == 4) { // todo: level
                             stream.get();
                             auto stp = new ExpressionStatement(getStatement(stream, level + 1));
-                            if (stp->mode() == OperationMode::Value) {
-                                stp->val() *= -1;
+                            if (stp->mode() == OperationMode::Value && typeis<ExpressionValue>(stp->factor())) {
+                                dynamic_cast<ExpressionValue&>(stp->factor()).get() *= -1;
                                 curr->reset(stp);
                             }
                             else {
@@ -384,12 +452,8 @@ namespace Compiler {
                             stat = 1;
                             break;
                         }
-                    }
-                    else if (level == 3) {
-                        if (tokenSymbol == '-') {
-                            stream.get();
-                            intsign *= -1;
-                            break;
+                        else {
+                            throw CompileException();
                         }
                     }
                 }
@@ -401,10 +465,10 @@ namespace Compiler {
 
                     if (tokenSymbol == '+' || tokenSymbol == '-') {
 
-                        if (level < 1) {
+                        if (level < 2) {
                             throw CompileException("internal error?");
                         }
-                        else if (level == 1) {
+                        else if (level == 2) {
                             auto new_ex = new ExpressionStatement(
                                 tokenSymbol == '-' ? OperationMode::Subtract : OperationMode::Add);
                             (*new_ex).args(0) = move(root);
@@ -414,15 +478,15 @@ namespace Compiler {
                             stat = 2;
                             break;
                         }
-                        else if (level > 1) {
+                        else if (level > 2) {
                             return move(*root);
                         }
                     }
                     else if (tokenSymbol == '*' || tokenSymbol == '/' || tokenSymbol == '%') {
-                        if (level < 2) {
+                        if (level < 3) {
                             throw CompileException("internal error?");
                         }
-                        else if (level == 2) {
+                        else if (level == 3) {
                             auto new_ex = new ExpressionStatement(
                                 tokenSymbol == '/' ? OperationMode::Divide :
                                 tokenSymbol == '%' ? OperationMode::Modulo :
@@ -434,7 +498,24 @@ namespace Compiler {
                             stat = 2;
                             break;
                         }
-                        else if (level > 2) {
+                        else if (level > 3) {
+                            return move(*root);
+                        }
+                    }
+                    else if (tokenSymbol == '=') {
+                        if (level < 1) {
+                            throw CompileException("internal error?");
+                        }
+                        else if (level == 1) {
+                            auto new_ex = new ExpressionStatement(OperationMode::Assign);
+                            (*new_ex).args(0) = move(*curr);
+                            curr->reset(new_ex);
+                            curr = &(*new_ex).args(1);
+                            stream.get();
+                            stat = 2;
+                            break;
+                        }
+                        else if (level > 1) {
                             return move(*root);
                         }
                     }
@@ -491,13 +572,29 @@ namespace Builder {
     }
 
 
+    WhiteSpace& convert_value(WhiteSpace& whitesp, const ExpressionFactor& factor) {
+        if (typeis<ExpressionValue>(factor)) {
+            whitesp.push(Instruments::Stack::push);
+            convert_integer(whitesp, dynamic_cast<const ExpressionValue&>(factor).get());
+            return whitesp;
+        }
+        else if (typeis<ExpressionVariable>(factor)) {
+            auto addr = dynamic_cast<const ExpressionVariable&>(factor).get();
+            whitesp.push(Instruments::Stack::push);
+            convert_integer(whitesp, integer(addr));
+            whitesp.push(Instruments::Heap::retrieve);
+            return whitesp;
+        }
+        throw OperatorException();
+    }
+
+
     WhiteSpace& convert_statement(WhiteSpace& whitesp, const ExpressionStatement& exps) {
 
         switch (exps.mode())
         {
         case OperationMode::Value:
-            whitesp.push(Instruments::Stack::push);
-            convert_integer(whitesp, exps.val());
+            convert_value(whitesp, exps.factor());
             return whitesp;
         case OperationMode::Minus:
             whitesp.push(Instruments::Stack::push);
@@ -530,7 +627,21 @@ namespace Builder {
             convert_statement(whitesp, exps[1]);
             whitesp.push(Instruments::Arithmetic::mod);
             return whitesp;
+        case OperationMode::Assign: {
+            assert(exps[0].isLvalue());
+            auto addr = dynamic_cast<const ExpressionVariable&>(exps[0].factor()).get();
+            whitesp.push(Instruments::Stack::push);
+            convert_integer(whitesp, integer(addr));
+            convert_statement(whitesp, exps[1]);
+            whitesp.push(Instruments::Heap::store);
+
+            whitesp.push(Instruments::Stack::push);
+            convert_integer(whitesp, integer(addr));
+            whitesp.push(Instruments::Heap::retrieve);
+            return whitesp;
         }
+        }
+        
         throw OperatorException();
     }
 }

@@ -33,4 +33,4 @@ calculate(you can use brackets) some statements and print the answers.
 
 ### progress 8
 
-- we can use variables.
+we can use a variable `abc`. `abc=5;abc+2;` is valid.
