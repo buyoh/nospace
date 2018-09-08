@@ -293,6 +293,8 @@ namespace Compiler {
         const string& name() const { return name_; }
         integer address() const { return addr_; }
         EntryType type() const { return type_; }
+        // Variableなら配列サイズ，Functionなら引数個数
+        // 1つの変数に複数の意味持たせるのは良くないよなぁ…
         integer length() const { return length_; }
     };
 
@@ -306,7 +308,7 @@ namespace Compiler {
     public:
         NameTable() :entries_(), addrH_(0), addrL_(0) { }
         
-        integer getVariablePtr(const string& name, int length) {
+        integer trymakeVariableAddr(const string& name, int length) {
             auto& p = entries_[name];
             if (p) {
                 if (p->type() != EntryType::Variable)
@@ -319,7 +321,7 @@ namespace Compiler {
             return p->address();
         }
 
-        integer getFunctionPtr(const string& name) {
+        integer trymakeFunctionAddr(const string& name) {
             auto& p = entries_[name];
             if (p) {
                 if (p->type() != EntryType::Function)
@@ -332,6 +334,10 @@ namespace Compiler {
             return p->address();
         }
 
+        inline const NameEntry& get(const string& name) const {
+            return *(entries_.find(name)->second);
+        }
+
         inline bool include(const string& name) const {
             return entries_.count(name);
         }
@@ -339,32 +345,36 @@ namespace Compiler {
 
 
     class ReservedNameTable : private NameTable {
-        integer keyIdCount_;
-        integer funcIdCount_;
     public:
-        ReservedNameTable() :NameTable(), keyIdCount_(1), funcIdCount_(1) { }
+        ReservedNameTable() :NameTable() { }
 
-        integer getVariablePtr(const string&, int) = delete;
-        integer getFunctionPtr(const string&) = delete;
+        integer trymakeVariableAddr(const string&, int) = delete;
+        integer trymakeFunctionAddr(const string&) = delete;
 
-        // @return =0: 存在しない, isFuncId: funcId, isKeywordId: keywordId
+        // @return =0: 存在しない
         inline integer getId(const string& name) const {
             auto it = entries_.find(name);
-            return it == entries_.end() ? 0 :
-                (it->second->type() == EntryType::Keyword ? -1 : 1) *
-                it->second->address();
+            return it == entries_.end() ? 0 : it->second->address();
         }
 
-        static inline bool isFuncId(integer id) { return id > 0; }
-        static inline bool isKeywordId(integer id) { return id < 0; }
+        static inline bool isFunction(integer id) { return id < 0; }
+        static inline bool isKeyword(integer id) { return id > 0; }
 
-        inline integer defineKeyword(const string& name) {
-            entries_[name].reset(new NameEntry(name, keyIdCount_, EntryType::Keyword));
-            return keyIdCount_++;
+        inline void defineKeyword(const string& name, integer id) {
+            assert(isKeyword(id));
+            entries_[name].reset(new NameEntry(name, id, EntryType::Keyword));
         }
-        inline integer defineEmbeddedFunction(const string& name) {
-            entries_[name].reset(new NameEntry(name, funcIdCount_, EntryType::Function));
-            return funcIdCount_++;
+        inline void defineEmbeddedFunction(const string& name, integer id, int argLength = 1) {
+            assert(isFunction(id));
+            entries_[name].reset(new NameEntry(name, id, EntryType::Function, argLength));
+        }
+
+        inline const NameEntry& get(const string& name) const {
+            return NameTable::get(name);
+        }
+
+        inline bool include(const string& name) const {
+            return NameTable::include(name);
         }
     };
 
@@ -411,10 +421,19 @@ namespace Compiler {
         inline integer get() const { return addr_; }
     };
 
+    class ExpressionFunction : public ExpressionFactor {
+        integer funcid_;
+    public:
+        ExpressionFunction(integer _f) :funcid_(_f) { }
+
+        inline integer& get() { return funcid_; }
+        inline integer get() const { return funcid_; }
+    };
+
 
     class ExpressionStatement {
         const OperationMode mode_;
-        //integer val_;
+        integer funcid_;
         unique_ptr<ExpressionFactor> factor_;
         vector<unique_ptr<ExpressionStatement>> args_;
 
@@ -441,6 +460,10 @@ namespace Compiler {
             : mode_(_mode) {
             setup();
         }
+        ExpressionStatement(integer _funcid)
+            : mode_(OperationMode::Call), funcid_(_funcid) {
+            setup();
+        }
         ExpressionStatement(ExpressionValue&& _factor)
             : mode_(OperationMode::Value), factor_(new ExpressionValue(_factor)) {
             setup();
@@ -452,6 +475,7 @@ namespace Compiler {
 
         inline ExpressionFactor& factor() const { return *factor_; }
         inline OperationMode mode() const { return mode_; }
+        inline integer id() const { return funcid_; }
 
         // OperationMode::Value かつ factor が ExpressionVariable である
         inline bool isLvalue() const {
@@ -479,13 +503,13 @@ namespace Compiler {
     }
 
 
-    ExpressionStatement getStatement(TokenStream& stream, NameTable& nameTable, int level) {
+    ExpressionStatement getStatement(TokenStream& stream, NameTable& nameTable, int level, int currstate = 0) {
 
         unique_ptr<ExpressionStatement> root;
         unique_ptr<ExpressionStatement>* curr = &root;
 
         // integer intsign = 1;
-        int state = 0; // << memo: global?
+        int state = currstate;
         while (!stream.eof()) {
             const Token& token = stream.peek();
 
@@ -517,28 +541,37 @@ namespace Compiler {
                     }
                     else if (level == 5) {
                         auto& tokenStr = tokenKeyword.to_string();
-                        auto reservedId = reservedNameTable.getId(tokenStr);
 
-                        if (ReservedNameTable::isKeywordId(reservedId)) {
-                            throw CompileException();
-                        }
-                        else if (ReservedNameTable::isFuncId(reservedId)) {
-                            assert(tokenKeyword == "__xyz");
+                        if (reservedNameTable.include(tokenStr)) {
+                            auto& entry = reservedNameTable.get(tokenStr);
 
-                            stream.get();
-                            try {
-                                assert(dynamic_cast<const TokenSymbol&>(stream.get()) == '(');
-                                assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ')');
-                            }
-                            catch (bad_cast) {
+                            if (entry.type() == EntryType::Keyword) {
                                 throw CompileException();
                             }
-                            return ExpressionStatement(OperationMode::Call);
+                            else if (entry.type() == EntryType::Function) {
+                                ExpressionStatement exps(entry.address());
+                                exps.resizeArgs(entry.length());
+
+                                try {
+                                    stream.get();
+                                    assert(dynamic_cast<const TokenSymbol&>(stream.get()) == '(');
+                                    for (int i = 0; i < entry.length(); ++i) {
+                                        exps.args(i).reset(new ExpressionStatement(getStatement(stream, nameTable, 1)));
+                                        if (i + 1 < entry.length())
+                                            assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ',');
+                                    }
+                                    assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ')');
+                                }
+                                catch (bad_cast) {
+                                    throw CompileException();
+                                }
+                                return exps;
+                            }
                         }
                         else {
-                            integer p = nameTable.getVariablePtr(tokenStr, 1);
+                            integer p = nameTable.trymakeVariableAddr(tokenStr, 1);
                             stream.get();
-                            return ExpressionStatement(ExpressionVariable(p)); // nametableが無いので
+                            return ExpressionStatement(ExpressionVariable(p));
                         }
 
                         throw CompileException();
@@ -667,7 +700,6 @@ namespace Compiler {
 
 
     ExpressionStatement getStatement(TokenStream& ts, NameTable& nameTable) {
-        int state = 0;
         return getStatement(ts, nameTable, 1);
     }
 }
@@ -777,8 +809,28 @@ namespace Builder {
             return whitesp;
         }
         case OperationMode::Call: {
-            whitesp.push(Instruments::Stack::push);
-            convert_integer(whitesp, integer(999));
+            if (exps.id() < 0) {
+                if (exps.id() == -99) { // __xyz todo: enum
+                    whitesp.push(Instruments::Stack::push);
+                    convert_integer(whitesp, integer(999));
+                }
+                else if (exps.id() == -10) { // __puti todo: enum
+                    convert_statement(whitesp, exps[0]);
+                    whitesp.push(Instruments::Stack::duplicate);
+                    whitesp.push(Instruments::IO::putnumber);
+                }
+                else if (exps.id() == -11) { // __putc todo: enum
+                    convert_statement(whitesp, exps[0]);
+                    whitesp.push(Instruments::Stack::duplicate);
+                    whitesp.push(Instruments::IO::putchar);
+                }
+                else {
+                    throw OperatorException();
+                }
+            }
+            else {
+                throw OperatorException();
+            }
             return whitesp;
         }
         }
@@ -795,7 +847,10 @@ int main() {
     using namespace Compiler;
     using namespace Builder;
 
-    reservedNameTable.defineEmbeddedFunction("__xyz");
+    reservedNameTable.defineEmbeddedFunction("__xyz", -99, 0);
+
+    reservedNameTable.defineEmbeddedFunction("__puti", -10, 1);
+    reservedNameTable.defineEmbeddedFunction("__putc", -11, 1);
 
     TokenStream ts(parseToTokens(cin));
 
@@ -805,8 +860,8 @@ int main() {
     while (!ts.eof()) {
         ExpressionStatement st = getStatement(ts, globalTable);
         convert_statement(code, st);
-        code.push(Instruments::IO::putnumber);
-        ts.get();
+        code.push(Instruments::Stack::discard);
+        ts.get(); // ';'
     }
     code.push(Instruments::Flow::exit);
 

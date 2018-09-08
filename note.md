@@ -43,3 +43,8 @@ use a function `__xyz()`. `__xyz()` always return `999`. `__xyz();` is valid.
 
 use some variables. `a=2;b=a+3;c=a*b;c*5;` is valid.
 
+### progress 11
+
+use build-in function `__puti` and `__putc`. `__puti(3+4);` says `7`.
+
+

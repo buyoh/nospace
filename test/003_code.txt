@@ -1,6 +1,6 @@
-a=5;
-a+2;
-b=a+10;
-c=(a+b)/4;
-c*2;
-b/a;
+__puti(a=5);
+__puti(a+2);
+__puti(b=a+10);
+__puti(c=(a+b)/4);
+__puti(c*2);
+__puti(b/a);

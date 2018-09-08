@@ -10,6 +10,7 @@ def vm_exec(path_code, path_stdin)
 end
 
 
+
 Dir.mkdir('temp') unless Dir.exist?('temp')
 
 open('./test/index.txt', 'r') do |io|
