@@ -48,3 +48,17 @@ use some variables. `a=2;b=a+3;c=a*b;c*5;` is valid.
 use build-in function `__puti` and `__putc`. `__puti(3+4);` says `7`.
 
 
+
+## feature
+
+### A1
+
+use build-in function `__geti` and `__getc`.
+
+### B1
+
+must use declaration. `let:x;__puti(i);`
+
+### B2
+
+use array.

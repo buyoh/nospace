@@ -307,7 +307,7 @@ namespace Compiler {
         integer addrL_; // label
     public:
         NameTable() :entries_(), addrH_(0), addrL_(0) { }
-        
+
         integer trymakeVariableAddr(const string& name, int length) {
             auto& p = entries_[name];
             if (p) {
@@ -494,213 +494,207 @@ namespace Compiler {
     };
 
 
-    void combineLeft() {
-
-    }
-
-    void combineRight() {
-
-    }
+    ExpressionStatement getStatement(TokenStream& stream, NameTable& nameTable);
 
 
-    ExpressionStatement getStatement(TokenStream& stream, NameTable& nameTable, int level, int currstate = 0) {
+    // elem
+    ExpressionStatement getStatementVal(TokenStream& stream, NameTable& nameTable) {
 
-        unique_ptr<ExpressionStatement> root;
-        unique_ptr<ExpressionStatement>* curr = &root;
+        const Token& token = stream.peek();
 
-        // integer intsign = 1;
-        int state = currstate;
-        while (!stream.eof()) {
-            const Token& token = stream.peek();
+        if (typeis<TokenInteger>(token)) {
 
-            switch (state) {
-            case 0:
-            case 2: {
-                if (typeis<TokenInteger>(token)) {
-                    assert(!(*curr));
+            integer val = dynamic_cast<const TokenInteger&>(token).get();
+            stream.get();
+            return ExpressionStatement(ExpressionValue(val));
+        }
+        else if (typeis<TokenKeyword>(token)) {
 
-                    if (level < 5) {
-                        curr->reset(new ExpressionStatement(getStatement(stream, nameTable, level + 1)));
-                        state = 1;
-                        break;
-                    }
-                    else if (level == 5) {
-                        integer val = dynamic_cast<const TokenInteger&>(token).get();
-                        stream.get();
-                        return ExpressionStatement(ExpressionValue(val));
-                    }
+            const auto& tokenKeyword = dynamic_cast<const TokenKeyword&>(token);
+
+            if (reservedNameTable.include(tokenKeyword.to_string())) {
+
+                auto& entry = reservedNameTable.get(tokenKeyword.to_string());
+
+                if (entry.type() == EntryType::Keyword) {
+                    throw CompileException();
                 }
-                else if (typeis<TokenKeyword>(token)) {
-                    const auto& tokenKeyword = dynamic_cast<const TokenKeyword&>(token);
-                    assert(!(*curr));
+                else if (entry.type() == EntryType::Function) {
+                    ExpressionStatement exps(entry.address());
+                    exps.resizeArgs(entry.length());
 
-                    if (level < 5) {
-                        curr->reset(new ExpressionStatement(getStatement(stream, nameTable, level + 1)));
-                        state = 1;
-                        break;
+                    try {
+                        stream.get();
+                        assert(dynamic_cast<const TokenSymbol&>(stream.get()) == '(');
+                        for (int i = 0; i < entry.length(); ++i) {
+                            exps.args(i).reset(new ExpressionStatement(getStatement(stream, nameTable)));
+                            if (i + 1 < entry.length())
+                                assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ',');
+                        }
+                        assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ')');
                     }
-                    else if (level == 5) {
-                        auto& tokenStr = tokenKeyword.to_string();
-
-                        if (reservedNameTable.include(tokenStr)) {
-                            auto& entry = reservedNameTable.get(tokenStr);
-
-                            if (entry.type() == EntryType::Keyword) {
-                                throw CompileException();
-                            }
-                            else if (entry.type() == EntryType::Function) {
-                                ExpressionStatement exps(entry.address());
-                                exps.resizeArgs(entry.length());
-
-                                try {
-                                    stream.get();
-                                    assert(dynamic_cast<const TokenSymbol&>(stream.get()) == '(');
-                                    for (int i = 0; i < entry.length(); ++i) {
-                                        exps.args(i).reset(new ExpressionStatement(getStatement(stream, nameTable, 1)));
-                                        if (i + 1 < entry.length())
-                                            assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ',');
-                                    }
-                                    assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ')');
-                                }
-                                catch (bad_cast) {
-                                    throw CompileException();
-                                }
-                                return exps;
-                            }
-                        }
-                        else {
-                            integer p = nameTable.trymakeVariableAddr(tokenStr, 1);
-                            stream.get();
-                            return ExpressionStatement(ExpressionVariable(p));
-                        }
-
+                    catch (bad_cast) {
                         throw CompileException();
                     }
+                    return move(exps);
                 }
-                else if (typeis<TokenSymbol>(token)) {
-                    const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
-                    assert(!(*curr));
+            }
+            else {
+                integer p = nameTable.trymakeVariableAddr(tokenKeyword.to_string(), 1);
+                stream.get();
+                return ExpressionStatement(ExpressionVariable(p));
+            }
+        }
+        else if (typeis<TokenSymbol>(token)) {
+            const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
 
-                    if (tokenSymbol == '(') {
-                        if (level < 6) {
-                            curr->reset(new ExpressionStatement(getStatement(stream, nameTable, level + 1)));
-                            state = 1;
-                            break;
-                        }
-                        else if (level == 6) {
-                            stream.get();
-                            curr->reset(new ExpressionStatement(getStatement(stream, nameTable, 1)));
-                            if (stream.peek() == ")") {
-                                state = 1;
-                                stream.get();
-                                break;
-                            }
-                            else
-                                throw CompileException();
-                        }
-                    }
+            if (tokenSymbol == '(') {
+                stream.get();
+                auto exps = getStatement(stream, nameTable);
 
-                    if (tokenSymbol == '-') {
-                        if (level < 4) {
-                            curr->reset(new ExpressionStatement(getStatement(stream, nameTable, level + 1)));
-                            state = 1;
-                            break;
-                        }
-                        else if (level == 4) { // todo: level
-                            stream.get();
-                            auto stp = new ExpressionStatement(getStatement(stream, nameTable, level + 1));
-                            if (stp->mode() == OperationMode::Value && typeis<ExpressionValue>(stp->factor())) {
-                                dynamic_cast<ExpressionValue&>(stp->factor()).get() *= -1;
-                                curr->reset(stp);
-                            }
-                            else {
-                                curr->reset(new ExpressionStatement(OperationMode::Minus));
-                                (*curr)->args(0).reset(stp);
-                            }
-                            state = 1;
-                            break;
-                        }
-                        else {
-                            throw CompileException();
-                        }
-                    }
-                }
+                if (stream.get() == ")") return move(exps);
                 throw CompileException();
             }
-            case 1: {
-                if (typeis<TokenSymbol>(token)) {
-                    const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
 
-                    if (tokenSymbol == '+' || tokenSymbol == '-') {
-
-                        if (level < 2) {
-                            throw CompileException("internal error?");
-                        }
-                        else if (level == 2) {
-                            auto new_ex = new ExpressionStatement(
-                                tokenSymbol == '-' ? OperationMode::Subtract : OperationMode::Add);
-                            (*new_ex).args(0) = move(root);
-                            root.reset(new_ex);
-                            curr = &(*new_ex).args(1);
-                            stream.get();
-                            state = 2;
-                            break;
-                        }
-                        else if (level > 2) {
-                            return move(*root);
-                        }
-                    }
-                    else if (tokenSymbol == '*' || tokenSymbol == '/' || tokenSymbol == '%') {
-                        if (level < 3) {
-                            throw CompileException("internal error?");
-                        }
-                        else if (level == 3) {
-                            auto new_ex = new ExpressionStatement(
-                                tokenSymbol == '/' ? OperationMode::Divide :
-                                tokenSymbol == '%' ? OperationMode::Modulo :
-                                OperationMode::Multiply);
-                            (*new_ex).args(0) = move(root);
-                            root.reset(new_ex);
-                            curr = &(*new_ex).args(1);
-                            stream.get();
-                            state = 2;
-                            break;
-                        }
-                        else if (level > 3) {
-                            return move(*root);
-                        }
-                    }
-                    else if (tokenSymbol == '=') {
-                        if (level < 1) {
-                            throw CompileException("internal error?");
-                        }
-                        else if (level == 1) {
-                            auto new_ex = new ExpressionStatement(OperationMode::Assign);
-                            (*new_ex).args(0) = move(*curr);
-                            curr->reset(new_ex);
-                            curr = &(*new_ex).args(1);
-                            stream.get();
-                            state = 2;
-                            break;
-                        }
-                        else if (level > 1) {
-                            return move(*root);
-                        }
-                    }
-                    else if (tokenSymbol == ';' || tokenSymbol == ')') {
-                        return move(*root);
-                    }
-                }
-                throw CompileException();
-            }
-            }
         }
         throw CompileException();
     }
 
+    // '-'
+    ExpressionStatement getStatementUnary(TokenStream& stream, NameTable& nameTable) {
 
-    ExpressionStatement getStatement(TokenStream& ts, NameTable& nameTable) {
-        return getStatement(ts, nameTable, 1);
+        const Token& token = stream.peek();
+
+        if (typeis<TokenSymbol>(token)) {
+            const TokenSymbol& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
+
+            if (tokenSymbol == '-') {
+                stream.get();
+                auto stV = getStatementUnary(stream, nameTable);
+
+                if (stV.mode() == OperationMode::Value && typeis<ExpressionValue>(stV.factor())) {
+                    dynamic_cast<ExpressionValue&>(stV.factor()).get() *= -1;
+                    return move(stV);
+                }
+                else {
+                    ExpressionStatement stOp(OperationMode::Minus);
+                    stOp.args(0).reset(new ExpressionStatement(move(stV)));
+                    return move(stOp);
+                }
+            }
+            else {
+                return ExpressionStatement(getStatementVal(stream, nameTable));
+            }
+        }
+        else {
+            return ExpressionStatement(getStatementVal(stream, nameTable));
+        }
+    }
+
+    // '*'
+    ExpressionStatement getStatementMul(TokenStream& stream, NameTable& nameTable) {
+        unique_ptr<ExpressionStatement> root;
+        unique_ptr<ExpressionStatement>* curr = &root;
+
+        curr->reset(new ExpressionStatement(getStatementUnary(stream, nameTable)));
+
+        while (!stream.eof()) {
+            const Token& token = stream.peek();
+
+            if (typeis<TokenSymbol>(token)) {
+                const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
+
+                if (tokenSymbol == '*' || tokenSymbol == '/' || tokenSymbol == '%') {
+                    auto new_ex = new ExpressionStatement(
+                        tokenSymbol == '/' ? OperationMode::Divide :
+                        tokenSymbol == '%' ? OperationMode::Modulo :
+                        OperationMode::Multiply);
+                    (*new_ex).args(0) = move(root);
+                    root.reset(new_ex);
+                    curr = &(*new_ex).args(1);
+                    stream.get();
+                }
+                else {
+                    break;
+                }
+            }
+            else {
+                throw CompileException();
+            }
+            curr->reset(new ExpressionStatement(getStatementUnary(stream, nameTable)));
+        }
+        return move(*root);
+    }
+
+    // '+'
+    ExpressionStatement getStatementPls(TokenStream& stream, NameTable& nameTable) {
+        unique_ptr<ExpressionStatement> root;
+        unique_ptr<ExpressionStatement>* curr = &root;
+
+        curr->reset(new ExpressionStatement(getStatementMul(stream, nameTable)));
+
+        while (!stream.eof()) {
+            const Token& token = stream.peek();
+
+            if (typeis<TokenSymbol>(token)) {
+                const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
+
+                if (tokenSymbol == '+' || tokenSymbol == '-') {
+
+                    auto new_ex = new ExpressionStatement(
+                        tokenSymbol == '-' ? OperationMode::Subtract : OperationMode::Add);
+                    (*new_ex).args(0) = move(root);
+                    root.reset(new_ex);
+                    curr = &(*new_ex).args(1);
+                    stream.get();
+                }
+                else {
+                    break;
+                }
+            }
+            else {
+                throw CompileException();
+            }
+            curr->reset(new ExpressionStatement(getStatementMul(stream, nameTable)));
+        }
+        return move(*root);
+    }
+
+    // '='
+    ExpressionStatement getStatementAsg(TokenStream& stream, NameTable& nameTable) {
+        unique_ptr<ExpressionStatement> root;
+        unique_ptr<ExpressionStatement>* curr = &root;
+
+
+        curr->reset(new ExpressionStatement(getStatementPls(stream, nameTable)));
+
+        while (!stream.eof()) {
+            const Token& token = stream.peek();
+            if (typeis<TokenSymbol>(token)) {
+                const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
+
+                if (tokenSymbol == '=') {
+                    auto new_ex = new ExpressionStatement(OperationMode::Assign);
+                    (*new_ex).args(0) = move(*curr);
+                    curr->reset(new_ex);
+                    curr = &(*new_ex).args(1);
+                    stream.get();
+                }
+                else {
+                    break;
+                }
+            }
+            else {
+                throw CompileException();
+            }
+            curr->reset(new ExpressionStatement(getStatementPls(stream, nameTable)));
+        }
+        return move(*root);
+    }
+
+
+    inline ExpressionStatement getStatement(TokenStream& ts, NameTable& nameTable) {
+        return getStatementAsg(ts, nameTable);
     }
 }
 
@@ -834,7 +828,7 @@ namespace Builder {
             return whitesp;
         }
         }
-        
+
         throw OperatorException();
     }
 }
@@ -868,4 +862,3 @@ int main() {
     cout << code << flush;
     return 0;
 }
-
