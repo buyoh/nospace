@@ -33,4 +33,13 @@ calculate(you can use brackets) some statements and print the answers.
 
 ### progress 8
 
-we can use a variable `abc`. `abc=5;abc+2;` is valid.
+use a variable `abc`. `abc=5;abc+2;` is valid.
+
+### progress 9
+
+use a function `__xyz()`. `__xyz()` always return `999`. `__xyz();` is valid.
+
+### progress 10
+
+use some variables. `a=2;b=a+3;c=a*b;c*5;` is valid.
+

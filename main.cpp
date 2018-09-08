@@ -153,6 +153,8 @@ namespace Parser {
     public:
         TokenKeyword(string _keyword) :keyword_(_keyword) {}
 
+        inline const string& to_string() const { return keyword_; }
+
         inline bool operator==(const TokenKeyword& t) const {
             return keyword_ == t.keyword_;
         }
@@ -267,6 +269,107 @@ namespace Compiler {
         CompileException(const char* msg = "") :runtime_error(msg) { }
     };
 
+    struct NameException : CompileException {
+        NameException(const char* msg = "") :CompileException(msg) { }
+    };
+
+
+    enum struct EntryType {
+        Variable,
+        Function,
+        Keyword
+    };
+
+
+    class NameEntry {
+        string name_;
+        integer addr_;
+        EntryType type_;
+        int length_;
+    public:
+        NameEntry(const string& _name, integer _addr, EntryType _type, int _length = 1)
+            :name_(_name), addr_(_addr), type_(_type), length_(_length) { }
+
+        const string& name() const { return name_; }
+        integer address() const { return addr_; }
+        EntryType type() const { return type_; }
+        integer length() const { return length_; }
+    };
+
+
+    class NameTable {
+    protected:
+        unordered_map<string, unique_ptr<NameEntry>> entries_;
+    private:
+        integer addrH_; // heap
+        integer addrL_; // label
+    public:
+        NameTable() :entries_(), addrH_(0), addrL_(0) { }
+        
+        integer getVariablePtr(const string& name, int length) {
+            auto& p = entries_[name];
+            if (p) {
+                if (p->type() != EntryType::Variable)
+                    throw NameException();
+            }
+            else {
+                p.reset(new NameEntry(name, addrH_, EntryType::Variable, length));
+                addrH_ += length;
+            }
+            return p->address();
+        }
+
+        integer getFunctionPtr(const string& name) {
+            auto& p = entries_[name];
+            if (p) {
+                if (p->type() != EntryType::Function)
+                    throw NameException();
+            }
+            else {
+                p.reset(new NameEntry(name, addrL_, EntryType::Function, 1));
+                addrL_ += 1;
+            }
+            return p->address();
+        }
+
+        inline bool include(const string& name) const {
+            return entries_.count(name);
+        }
+    };
+
+
+    class ReservedNameTable : private NameTable {
+        integer keyIdCount_;
+        integer funcIdCount_;
+    public:
+        ReservedNameTable() :NameTable(), keyIdCount_(1), funcIdCount_(1) { }
+
+        integer getVariablePtr(const string&, int) = delete;
+        integer getFunctionPtr(const string&) = delete;
+
+        // @return =0: 存在しない, isFuncId: funcId, isKeywordId: keywordId
+        inline integer getId(const string& name) const {
+            auto it = entries_.find(name);
+            return it == entries_.end() ? 0 :
+                (it->second->type() == EntryType::Keyword ? -1 : 1) *
+                it->second->address();
+        }
+
+        static inline bool isFuncId(integer id) { return id > 0; }
+        static inline bool isKeywordId(integer id) { return id < 0; }
+
+        inline integer defineKeyword(const string& name) {
+            entries_[name].reset(new NameEntry(name, keyIdCount_, EntryType::Keyword));
+            return keyIdCount_++;
+        }
+        inline integer defineEmbeddedFunction(const string& name) {
+            entries_[name].reset(new NameEntry(name, funcIdCount_, EntryType::Function));
+            return funcIdCount_++;
+        }
+    };
+
+    ReservedNameTable reservedNameTable; // TODO: 変な場所にstatic変数
+
 
     enum struct OperationMode {
         Value,
@@ -300,12 +403,12 @@ namespace Compiler {
     };
 
     class ExpressionVariable : public ExpressionFactor {
-        size_t addr_;
+        integer addr_;
     public:
-        ExpressionVariable(size_t _addr) :addr_(_addr) { }
+        ExpressionVariable(integer _addr) :addr_(_addr) { }
 
-        inline size_t& get() { return addr_; }
-        inline size_t get() const { return addr_; }
+        inline integer& get() { return addr_; }
+        inline integer get() const { return addr_; }
     };
 
 
@@ -367,25 +470,34 @@ namespace Compiler {
     };
 
 
-    ExpressionStatement getStatement(TokenStream& stream, int level) {
+    void combineLeft() {
+
+    }
+
+    void combineRight() {
+
+    }
+
+
+    ExpressionStatement getStatement(TokenStream& stream, NameTable& nameTable, int level) {
 
         unique_ptr<ExpressionStatement> root;
         unique_ptr<ExpressionStatement>* curr = &root;
 
         // integer intsign = 1;
-        int stat = 0; // << memo: global?
+        int state = 0; // << memo: global?
         while (!stream.eof()) {
             const Token& token = stream.peek();
 
-            switch (stat) {
+            switch (state) {
             case 0:
             case 2: {
                 if (typeis<TokenInteger>(token)) {
                     assert(!(*curr));
 
                     if (level < 5) {
-                        curr->reset(new ExpressionStatement(getStatement(stream, level + 1)));
-                        stat = 1;
+                        curr->reset(new ExpressionStatement(getStatement(stream, nameTable, level + 1)));
+                        state = 1;
                         break;
                     }
                     else if (level == 5) {
@@ -397,16 +509,39 @@ namespace Compiler {
                 else if (typeis<TokenKeyword>(token)) {
                     const auto& tokenKeyword = dynamic_cast<const TokenKeyword&>(token);
                     assert(!(*curr));
-                    assert(tokenKeyword == "abc"); // TODO: 
 
                     if (level < 5) {
-                        curr->reset(new ExpressionStatement(getStatement(stream, level + 1)));
-                        stat = 1;
+                        curr->reset(new ExpressionStatement(getStatement(stream, nameTable, level + 1)));
+                        state = 1;
                         break;
                     }
                     else if (level == 5) {
-                        stream.get();
-                        return ExpressionStatement(ExpressionVariable(0)); // nametableが無いので
+                        auto& tokenStr = tokenKeyword.to_string();
+                        auto reservedId = reservedNameTable.getId(tokenStr);
+
+                        if (ReservedNameTable::isKeywordId(reservedId)) {
+                            throw CompileException();
+                        }
+                        else if (ReservedNameTable::isFuncId(reservedId)) {
+                            assert(tokenKeyword == "__xyz");
+
+                            stream.get();
+                            try {
+                                assert(dynamic_cast<const TokenSymbol&>(stream.get()) == '(');
+                                assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ')');
+                            }
+                            catch (bad_cast) {
+                                throw CompileException();
+                            }
+                            return ExpressionStatement(OperationMode::Call);
+                        }
+                        else {
+                            integer p = nameTable.getVariablePtr(tokenStr, 1);
+                            stream.get();
+                            return ExpressionStatement(ExpressionVariable(p)); // nametableが無いので
+                        }
+
+                        throw CompileException();
                     }
                 }
                 else if (typeis<TokenSymbol>(token)) {
@@ -415,15 +550,15 @@ namespace Compiler {
 
                     if (tokenSymbol == '(') {
                         if (level < 6) {
-                            curr->reset(new ExpressionStatement(getStatement(stream, level + 1)));
-                            stat = 1;
+                            curr->reset(new ExpressionStatement(getStatement(stream, nameTable, level + 1)));
+                            state = 1;
                             break;
                         }
                         else if (level == 6) {
                             stream.get();
-                            curr->reset(new ExpressionStatement(getStatement(stream, 1)));
+                            curr->reset(new ExpressionStatement(getStatement(stream, nameTable, 1)));
                             if (stream.peek() == ")") {
-                                stat = 1;
+                                state = 1;
                                 stream.get();
                                 break;
                             }
@@ -434,13 +569,13 @@ namespace Compiler {
 
                     if (tokenSymbol == '-') {
                         if (level < 4) {
-                            curr->reset(new ExpressionStatement(getStatement(stream, level + 1)));
-                            stat = 1;
+                            curr->reset(new ExpressionStatement(getStatement(stream, nameTable, level + 1)));
+                            state = 1;
                             break;
                         }
                         else if (level == 4) { // todo: level
                             stream.get();
-                            auto stp = new ExpressionStatement(getStatement(stream, level + 1));
+                            auto stp = new ExpressionStatement(getStatement(stream, nameTable, level + 1));
                             if (stp->mode() == OperationMode::Value && typeis<ExpressionValue>(stp->factor())) {
                                 dynamic_cast<ExpressionValue&>(stp->factor()).get() *= -1;
                                 curr->reset(stp);
@@ -449,7 +584,7 @@ namespace Compiler {
                                 curr->reset(new ExpressionStatement(OperationMode::Minus));
                                 (*curr)->args(0).reset(stp);
                             }
-                            stat = 1;
+                            state = 1;
                             break;
                         }
                         else {
@@ -475,7 +610,7 @@ namespace Compiler {
                             root.reset(new_ex);
                             curr = &(*new_ex).args(1);
                             stream.get();
-                            stat = 2;
+                            state = 2;
                             break;
                         }
                         else if (level > 2) {
@@ -495,7 +630,7 @@ namespace Compiler {
                             root.reset(new_ex);
                             curr = &(*new_ex).args(1);
                             stream.get();
-                            stat = 2;
+                            state = 2;
                             break;
                         }
                         else if (level > 3) {
@@ -512,7 +647,7 @@ namespace Compiler {
                             curr->reset(new_ex);
                             curr = &(*new_ex).args(1);
                             stream.get();
-                            stat = 2;
+                            state = 2;
                             break;
                         }
                         else if (level > 1) {
@@ -531,8 +666,9 @@ namespace Compiler {
     }
 
 
-    ExpressionStatement getStatement(TokenStream& ts) {
-        return getStatement(ts, 1);
+    ExpressionStatement getStatement(TokenStream& ts, NameTable& nameTable) {
+        int state = 0;
+        return getStatement(ts, nameTable, 1);
     }
 }
 
@@ -640,6 +776,11 @@ namespace Builder {
             whitesp.push(Instruments::Heap::retrieve);
             return whitesp;
         }
+        case OperationMode::Call: {
+            whitesp.push(Instruments::Stack::push);
+            convert_integer(whitesp, integer(999));
+            return whitesp;
+        }
         }
         
         throw OperatorException();
@@ -654,12 +795,15 @@ int main() {
     using namespace Compiler;
     using namespace Builder;
 
+    reservedNameTable.defineEmbeddedFunction("__xyz");
+
     TokenStream ts(parseToTokens(cin));
 
     WhiteSpace code;
+    NameTable globalTable;
 
     while (!ts.eof()) {
-        ExpressionStatement st = getStatement(ts);
+        ExpressionStatement st = getStatement(ts, globalTable);
         convert_statement(code, st);
         code.push(Instruments::IO::putnumber);
         ts.get();
