@@ -504,11 +504,11 @@ namespace Compiler {
     };
 
 
-    Expression getExpression(TokenStream& stream, NameTable& nameTable);
+    unique_ptr<Expression> getExpression(TokenStream& stream, NameTable& nameTable);
 
 
     // elem
-    Expression getExpressionVal(TokenStream& stream, NameTable& nameTable) {
+    unique_ptr<Expression> getExpressionVal(TokenStream& stream, NameTable& nameTable) {
 
         const Token& token = stream.peek();
 
@@ -516,7 +516,7 @@ namespace Compiler {
 
             integer val = dynamic_cast<const TokenInteger&>(token).get();
             stream.get();
-            return Expression(FactorValue(val));
+            return make_unique<Expression>(FactorValue(val));
         }
         else if (typeis<TokenKeyword>(token)) {
 
@@ -537,7 +537,7 @@ namespace Compiler {
                         stream.get();
                         assert(dynamic_cast<const TokenSymbol&>(stream.get()) == '(');
                         for (int i = 0; i < entry.length(); ++i) {
-                            exps.args(i).reset(new Expression(getExpression(stream, nameTable)));
+                            exps.args(i) = move(getExpression(stream, nameTable));
                             if (i + 1 < entry.length())
                                 assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ',');
                         }
@@ -546,7 +546,7 @@ namespace Compiler {
                     catch (bad_cast) {
                         throw CompileException();
                     }
-                    return move(exps);
+                    return make_unique<Expression>(move(exps));
                 }
             }
             else {
@@ -559,12 +559,12 @@ namespace Compiler {
                     auto& ref = nameTable.trymakeFunctionAddr(tokenKeyword.to_string());
                     assert(dynamic_cast<const TokenSymbol&>(stream.get()) == '(');
                     assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ')');
-                    return Expression(ref.address());
+                    return make_unique<Expression>(ref.address());
                 }
                 else {
                     // variable
                     auto& ref = nameTable.trymakeVariableAddr(tokenKeyword.to_string(), 1);
-                    return Expression(FactorVariable(ref.address()));
+                    return make_unique<Expression>(FactorVariable(ref.address()));
                 }
 
             }
@@ -585,7 +585,7 @@ namespace Compiler {
     }
 
     // '-'
-    Expression getExpressionUnary(TokenStream& stream, NameTable& nameTable) {
+    unique_ptr<Expression> getExpressionUnary(TokenStream& stream, NameTable& nameTable) {
 
         const Token& token = stream.peek();
 
@@ -596,31 +596,32 @@ namespace Compiler {
                 stream.get();
                 auto stV = getExpressionUnary(stream, nameTable);
 
-                if (stV.mode() == OperationMode::Value && typeis<FactorValue>(stV.factor())) {
-                    dynamic_cast<FactorValue&>(stV.factor()).get() *= -1;
+                if (stV->mode() == OperationMode::Value && typeis<FactorValue>(stV->factor())) {
+                    // optimization
+                    dynamic_cast<FactorValue&>(stV->factor()).get() *= -1;
                     return move(stV);
                 }
                 else {
                     Expression stOp(OperationMode::Minus);
-                    stOp.args(0).reset(new Expression(move(stV)));
-                    return move(stOp);
+                    stOp.args(0) = move(stV);
+                    return make_unique<Expression>(move(stOp));
                 }
             }
             else {
-                return Expression(getExpressionVal(stream, nameTable));
+                return getExpressionVal(stream, nameTable);
             }
         }
         else {
-            return Expression(getExpressionVal(stream, nameTable));
+            return getExpressionVal(stream, nameTable);
         }
     }
 
     // '*'
-    Expression getExpressionMul(TokenStream& stream, NameTable& nameTable) {
+    unique_ptr<Expression> getExpressionMul(TokenStream& stream, NameTable& nameTable) {
         unique_ptr<Expression> root;
         unique_ptr<Expression>* curr = &root;
 
-        curr->reset(new Expression(getExpressionUnary(stream, nameTable)));
+        *curr = move(getExpressionUnary(stream, nameTable));
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
@@ -645,17 +646,17 @@ namespace Compiler {
             else {
                 throw CompileException();
             }
-            curr->reset(new Expression(getExpressionUnary(stream, nameTable)));
+            *curr = move(getExpressionUnary(stream, nameTable));
         }
-        return move(*root);
+        return root;
     }
 
     // '+'
-    Expression getExpressionPls(TokenStream& stream, NameTable& nameTable) {
+    unique_ptr<Expression> getExpressionPls(TokenStream& stream, NameTable& nameTable) {
         unique_ptr<Expression> root;
         unique_ptr<Expression>* curr = &root;
 
-        curr->reset(new Expression(getExpressionMul(stream, nameTable)));
+        *curr = move(getExpressionMul(stream, nameTable));
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
@@ -679,17 +680,17 @@ namespace Compiler {
             else {
                 throw CompileException();
             }
-            curr->reset(new Expression(getExpressionMul(stream, nameTable)));
+            *curr = move(getExpressionMul(stream, nameTable));
         }
-        return move(*root);
+        return root;
     }
 
     // '='
-    Expression getExpressionAsg(TokenStream& stream, NameTable& nameTable) {
+    unique_ptr<Expression> getExpressionAsg(TokenStream& stream, NameTable& nameTable) {
         unique_ptr<Expression> root;
         unique_ptr<Expression>* curr = &root;
 
-        curr->reset(new Expression(getExpressionPls(stream, nameTable)));
+        *curr = move(getExpressionPls(stream, nameTable));
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
@@ -710,13 +711,13 @@ namespace Compiler {
             else {
                 throw CompileException();
             }
-            curr->reset(new Expression(getExpressionPls(stream, nameTable)));
+            *curr = move(getExpressionPls(stream, nameTable));
         }
-        return move(*root);
+        return root;
     }
 
 
-    inline Expression getExpression(TokenStream& ts, NameTable& nameTable) {
+    inline unique_ptr<Expression> getExpression(TokenStream& ts, NameTable& nameTable) {
         return getExpressionAsg(ts, nameTable);
     }
 
@@ -747,8 +748,8 @@ namespace Compiler {
     //
 
 
-    StatementScope getStatementsScope(TokenStream& stream, NameTable& parentNameTable, bool globalScope = false) {
-        StatementScope localScope;
+    unique_ptr<StatementScope> getStatementsScope(TokenStream& stream, NameTable& parentNameTable, bool globalScope = false) {
+        auto localScope = make_unique<StatementScope>();
         assert(globalScope || dynamic_cast<const TokenSymbol&>(stream.get()) == '{');
 
         while (true) {
@@ -766,13 +767,13 @@ namespace Compiler {
             }
 
             //localScope.statements.emplace_back(new Statement(getStatement(stream, localScope.nameTable)));
-            localScope.statements.push_back(getStatement(stream, parentNameTable));
+            localScope->statements.push_back(getStatement(stream, parentNameTable));
         }
-        return move(localScope);
+        return localScope;
     }
 
 
-    StatementFunction getStatementFunction(TokenStream& stream, NameTable& nameTable) {
+    unique_ptr<StatementFunction> getStatementFunction(TokenStream& stream, NameTable& nameTable) {
         assert(dynamic_cast<const TokenKeyword&>(stream.get()) == "func");
         assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ':');
         auto funcname = dynamic_cast<const TokenKeyword&>(stream.get());
@@ -788,7 +789,7 @@ namespace Compiler {
         auto& entryRef = nameTable.trymakeFunctionAddr(funcname.to_string());
         entryRef.address();
 
-        return StatementFunction(move(getStatementsScope(stream, nameTable)), &entryRef);
+        return make_unique<StatementFunction>(move(*getStatementsScope(stream, nameTable)), &entryRef);
     }
 
 
@@ -801,12 +802,12 @@ namespace Compiler {
         else if (typeis<TokenKeyword>(token)) {
             auto& tokenKeyword = dynamic_cast<const TokenKeyword&>(token);
             if (tokenKeyword == "func") {
-                return make_unique<StatementFunction>(getStatementFunction(stream, nameTable));
+                return getStatementFunction(stream, nameTable);
             }
         }
 
         if (globalScope) throw CompileException();
-        auto&& p = make_unique<Expression>(getExpression(stream, nameTable));
+        auto&& p = getExpression(stream, nameTable);
         assert(stream.get() == ";");
         return move(p);
 
@@ -1012,7 +1013,7 @@ int main() {
 
     NameTable globalTable;
 
-    StatementScope globalScope = getStatementsScope(tokenStream, globalTable, true);
+    StatementScope globalScope = move(*getStatementsScope(tokenStream, globalTable, true));
 
     if (!globalTable.include("main"))
         throw GenerationException();
