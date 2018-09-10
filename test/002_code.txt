@@ -1,3 +1,5 @@
+func:main(){
 __puti(6*(7-4));
 __puti(__xyz());
 __puti((1+__xyz())/250);
+}

@@ -1,3 +1,2 @@
-__puti(abc=-1-3);
-__puti(abc=abc*2);
-__puti((-abc+2)/5);
+func:fn(){__puti(2);}
+func:main(){__puti(1);fn();__puti(3);}

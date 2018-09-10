@@ -1,4 +1,8 @@
 
+# note
+
+- 言語名 `nospace`．空白を一切入れなくても成立するsyntaxを目指す．
+
 # progress
 
 ### progress 1
@@ -47,7 +51,11 @@ use some variables. `a=2;b=a+3;c=a*b;c*5;` is valid.
 
 use build-in function `__puti` and `__putc`. `__puti(3+4);` says `7`.
 
+### progress 12
 
+use user-defined function. must define `main` function. all variables are global.
+`func:main(){__puti(9);};` is valid. but `return` is invalid.
+`func:f(){__puti(20);};func:main(){f();};` is valid.
 
 ## feature
 

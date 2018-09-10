@@ -12,6 +12,9 @@ inline bool typeis(const U& a1) {
 }
 
 
+// todo: assert を throw に書き換える
+
+
 struct TODOChottomatteneException : public runtime_error {
     TODOChottomatteneException() :runtime_error("") { }
 };
@@ -281,6 +284,7 @@ namespace Compiler {
     };
 
 
+    // TODO: define NameEntryVariable, NameEntryFunction, NameEntryKeyword
     class NameEntry {
         string name_;
         integer addr_;
@@ -299,6 +303,7 @@ namespace Compiler {
     };
 
 
+    // TODO: parentNameTable
     class NameTable {
     protected:
         unordered_map<string, unique_ptr<NameEntry>> entries_;
@@ -308,7 +313,7 @@ namespace Compiler {
     public:
         NameTable() :entries_(), addrH_(0), addrL_(0) { }
 
-        integer trymakeVariableAddr(const string& name, int length) {
+        const NameEntry& trymakeVariableAddr(const string& name, int length) {
             auto& p = entries_[name];
             if (p) {
                 if (p->type() != EntryType::Variable)
@@ -318,10 +323,10 @@ namespace Compiler {
                 p.reset(new NameEntry(name, addrH_, EntryType::Variable, length));
                 addrH_ += length;
             }
-            return p->address();
+            return *p;
         }
 
-        integer trymakeFunctionAddr(const string& name) {
+        const NameEntry& trymakeFunctionAddr(const string& name) {
             auto& p = entries_[name];
             if (p) {
                 if (p->type() != EntryType::Function)
@@ -331,7 +336,7 @@ namespace Compiler {
                 p.reset(new NameEntry(name, addrL_, EntryType::Function, 1));
                 addrL_ += 1;
             }
-            return p->address();
+            return *p;
         }
 
         inline const NameEntry& get(const string& name) const {
@@ -381,6 +386,11 @@ namespace Compiler {
     ReservedNameTable reservedNameTable; // TODO: 変な場所にstatic変数
 
 
+    struct Statement {
+        virtual ~Statement() { }
+    };
+
+
     enum struct OperationMode {
         Value,
         Minus,
@@ -399,43 +409,43 @@ namespace Compiler {
     // }
 
 
-    struct ExpressionFactor {
-        virtual ~ExpressionFactor() {}
+    struct Factor {
+        virtual ~Factor() {}
     };
 
-    class ExpressionValue : public ExpressionFactor {
+    class FactorValue : public Factor {
         integer val_;
     public:
-        ExpressionValue(integer _val) :val_(_val) { }
+        FactorValue(integer _val) :val_(_val) { }
 
         inline integer& get() { return val_; }
         inline integer get() const { return val_; }
     };
 
-    class ExpressionVariable : public ExpressionFactor {
+    class FactorVariable : public Factor {
         integer addr_;
     public:
-        ExpressionVariable(integer _addr) :addr_(_addr) { }
+        FactorVariable(integer _addr) :addr_(_addr) { }
 
         inline integer& get() { return addr_; }
         inline integer get() const { return addr_; }
     };
 
-    class ExpressionFunction : public ExpressionFactor {
+    class FactorCaller : public Factor {
         integer funcid_;
     public:
-        ExpressionFunction(integer _f) :funcid_(_f) { }
+        FactorCaller(integer _f) :funcid_(_f) { }
 
         inline integer& get() { return funcid_; }
         inline integer get() const { return funcid_; }
     };
 
 
-    class ExpressionStatement {
+    class Expression : public Statement {
         const OperationMode mode_;
         integer funcid_;
-        unique_ptr<ExpressionFactor> factor_;
-        vector<unique_ptr<ExpressionStatement>> args_;
+        unique_ptr<Factor> factor_;
+        vector<unique_ptr<Expression>> args_;
 
         void setup() {
             switch (mode_) {
@@ -456,37 +466,37 @@ namespace Compiler {
             }
         }
     public:
-        ExpressionStatement(OperationMode _mode)
+        Expression(OperationMode _mode)
             : mode_(_mode) {
             setup();
         }
-        ExpressionStatement(integer _funcid)
+        Expression(integer _funcid) // TODO: FactorCaller&&
             : mode_(OperationMode::Call), funcid_(_funcid) {
             setup();
         }
-        ExpressionStatement(ExpressionValue&& _factor)
-            : mode_(OperationMode::Value), factor_(new ExpressionValue(_factor)) {
+        Expression(FactorValue&& _factor)
+            : mode_(OperationMode::Value), factor_(new FactorValue(_factor)) {
             setup();
         }
-        ExpressionStatement(ExpressionVariable&& _factor)
-            : mode_(OperationMode::Value), factor_(new ExpressionVariable(_factor)) {
+        Expression(FactorVariable&& _factor)
+            : mode_(OperationMode::Value), factor_(new FactorVariable(_factor)) {
             setup();
         }
 
-        inline ExpressionFactor& factor() const { return *factor_; }
+        inline Factor& factor() const { return *factor_; }
         inline OperationMode mode() const { return mode_; }
         inline integer id() const { return funcid_; }
 
-        // OperationMode::Value かつ factor が ExpressionVariable である
+        // OperationMode::Value かつ factor が FactorVariable である
         inline bool isLvalue() const {
-            return mode_ == OperationMode::Value && typeis<ExpressionVariable>(*factor_);
+            return mode_ == OperationMode::Value && typeis<FactorVariable>(*factor_);
         }
 
         inline decltype(args_)::value_type& args(int i) { return args_[i]; }
         inline const decltype(args_)::value_type& args(int i) const { return args_[i]; }
 
-        inline ExpressionStatement& operator[](int i) { return *args_[i]; }
-        inline const ExpressionStatement& operator[](int i) const { return *args_[i]; }
+        inline Expression& operator[](int i) { return *args_[i]; }
+        inline const Expression& operator[](int i) const { return *args_[i]; }
 
         inline void resizeArgs(int size) { args_.resize(size); }
 
@@ -494,11 +504,11 @@ namespace Compiler {
     };
 
 
-    ExpressionStatement getStatement(TokenStream& stream, NameTable& nameTable);
+    Expression getExpression(TokenStream& stream, NameTable& nameTable);
 
 
     // elem
-    ExpressionStatement getStatementVal(TokenStream& stream, NameTable& nameTable) {
+    Expression getExpressionVal(TokenStream& stream, NameTable& nameTable) {
 
         const Token& token = stream.peek();
 
@@ -506,7 +516,7 @@ namespace Compiler {
 
             integer val = dynamic_cast<const TokenInteger&>(token).get();
             stream.get();
-            return ExpressionStatement(ExpressionValue(val));
+            return Expression(FactorValue(val));
         }
         else if (typeis<TokenKeyword>(token)) {
 
@@ -520,14 +530,14 @@ namespace Compiler {
                     throw CompileException();
                 }
                 else if (entry.type() == EntryType::Function) {
-                    ExpressionStatement exps(entry.address());
+                    Expression exps(entry.address());
                     exps.resizeArgs(entry.length());
 
                     try {
                         stream.get();
                         assert(dynamic_cast<const TokenSymbol&>(stream.get()) == '(');
                         for (int i = 0; i < entry.length(); ++i) {
-                            exps.args(i).reset(new ExpressionStatement(getStatement(stream, nameTable)));
+                            exps.args(i).reset(new Expression(getExpression(stream, nameTable)));
                             if (i + 1 < entry.length())
                                 assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ',');
                         }
@@ -540,9 +550,23 @@ namespace Compiler {
                 }
             }
             else {
-                integer p = nameTable.trymakeVariableAddr(tokenKeyword.to_string(), 1);
+
                 stream.get();
-                return ExpressionStatement(ExpressionVariable(p));
+                const Token& nextToken = stream.peek();
+
+                if (nextToken == "(") {
+                    // function
+                    auto& ref = nameTable.trymakeFunctionAddr(tokenKeyword.to_string());
+                    assert(dynamic_cast<const TokenSymbol&>(stream.get()) == '(');
+                    assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ')');
+                    return Expression(ref.address());
+                }
+                else {
+                    // variable
+                    auto& ref = nameTable.trymakeVariableAddr(tokenKeyword.to_string(), 1);
+                    return Expression(FactorVariable(ref.address()));
+                }
+
             }
         }
         else if (typeis<TokenSymbol>(token)) {
@@ -550,7 +574,7 @@ namespace Compiler {
 
             if (tokenSymbol == '(') {
                 stream.get();
-                auto exps = getStatement(stream, nameTable);
+                auto exps = getExpression(stream, nameTable);
 
                 if (stream.get() == ")") return move(exps);
                 throw CompileException();
@@ -561,7 +585,7 @@ namespace Compiler {
     }
 
     // '-'
-    ExpressionStatement getStatementUnary(TokenStream& stream, NameTable& nameTable) {
+    Expression getExpressionUnary(TokenStream& stream, NameTable& nameTable) {
 
         const Token& token = stream.peek();
 
@@ -570,33 +594,33 @@ namespace Compiler {
 
             if (tokenSymbol == '-') {
                 stream.get();
-                auto stV = getStatementUnary(stream, nameTable);
+                auto stV = getExpressionUnary(stream, nameTable);
 
-                if (stV.mode() == OperationMode::Value && typeis<ExpressionValue>(stV.factor())) {
-                    dynamic_cast<ExpressionValue&>(stV.factor()).get() *= -1;
+                if (stV.mode() == OperationMode::Value && typeis<FactorValue>(stV.factor())) {
+                    dynamic_cast<FactorValue&>(stV.factor()).get() *= -1;
                     return move(stV);
                 }
                 else {
-                    ExpressionStatement stOp(OperationMode::Minus);
-                    stOp.args(0).reset(new ExpressionStatement(move(stV)));
+                    Expression stOp(OperationMode::Minus);
+                    stOp.args(0).reset(new Expression(move(stV)));
                     return move(stOp);
                 }
             }
             else {
-                return ExpressionStatement(getStatementVal(stream, nameTable));
+                return Expression(getExpressionVal(stream, nameTable));
             }
         }
         else {
-            return ExpressionStatement(getStatementVal(stream, nameTable));
+            return Expression(getExpressionVal(stream, nameTable));
         }
     }
 
     // '*'
-    ExpressionStatement getStatementMul(TokenStream& stream, NameTable& nameTable) {
-        unique_ptr<ExpressionStatement> root;
-        unique_ptr<ExpressionStatement>* curr = &root;
+    Expression getExpressionMul(TokenStream& stream, NameTable& nameTable) {
+        unique_ptr<Expression> root;
+        unique_ptr<Expression>* curr = &root;
 
-        curr->reset(new ExpressionStatement(getStatementUnary(stream, nameTable)));
+        curr->reset(new Expression(getExpressionUnary(stream, nameTable)));
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
@@ -605,7 +629,7 @@ namespace Compiler {
                 const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
 
                 if (tokenSymbol == '*' || tokenSymbol == '/' || tokenSymbol == '%') {
-                    auto new_ex = new ExpressionStatement(
+                    auto new_ex = new Expression(
                         tokenSymbol == '/' ? OperationMode::Divide :
                         tokenSymbol == '%' ? OperationMode::Modulo :
                         OperationMode::Multiply);
@@ -621,17 +645,17 @@ namespace Compiler {
             else {
                 throw CompileException();
             }
-            curr->reset(new ExpressionStatement(getStatementUnary(stream, nameTable)));
+            curr->reset(new Expression(getExpressionUnary(stream, nameTable)));
         }
         return move(*root);
     }
 
     // '+'
-    ExpressionStatement getStatementPls(TokenStream& stream, NameTable& nameTable) {
-        unique_ptr<ExpressionStatement> root;
-        unique_ptr<ExpressionStatement>* curr = &root;
+    Expression getExpressionPls(TokenStream& stream, NameTable& nameTable) {
+        unique_ptr<Expression> root;
+        unique_ptr<Expression>* curr = &root;
 
-        curr->reset(new ExpressionStatement(getStatementMul(stream, nameTable)));
+        curr->reset(new Expression(getExpressionMul(stream, nameTable)));
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
@@ -641,7 +665,7 @@ namespace Compiler {
 
                 if (tokenSymbol == '+' || tokenSymbol == '-') {
 
-                    auto new_ex = new ExpressionStatement(
+                    auto new_ex = new Expression(
                         tokenSymbol == '-' ? OperationMode::Subtract : OperationMode::Add);
                     (*new_ex).args(0) = move(root);
                     root.reset(new_ex);
@@ -655,18 +679,17 @@ namespace Compiler {
             else {
                 throw CompileException();
             }
-            curr->reset(new ExpressionStatement(getStatementMul(stream, nameTable)));
+            curr->reset(new Expression(getExpressionMul(stream, nameTable)));
         }
         return move(*root);
     }
 
     // '='
-    ExpressionStatement getStatementAsg(TokenStream& stream, NameTable& nameTable) {
-        unique_ptr<ExpressionStatement> root;
-        unique_ptr<ExpressionStatement>* curr = &root;
+    Expression getExpressionAsg(TokenStream& stream, NameTable& nameTable) {
+        unique_ptr<Expression> root;
+        unique_ptr<Expression>* curr = &root;
 
-
-        curr->reset(new ExpressionStatement(getStatementPls(stream, nameTable)));
+        curr->reset(new Expression(getExpressionPls(stream, nameTable)));
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
@@ -674,7 +697,7 @@ namespace Compiler {
                 const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
 
                 if (tokenSymbol == '=') {
-                    auto new_ex = new ExpressionStatement(OperationMode::Assign);
+                    auto new_ex = new Expression(OperationMode::Assign);
                     (*new_ex).args(0) = move(*curr);
                     curr->reset(new_ex);
                     curr = &(*new_ex).args(1);
@@ -687,15 +710,111 @@ namespace Compiler {
             else {
                 throw CompileException();
             }
-            curr->reset(new ExpressionStatement(getStatementPls(stream, nameTable)));
+            curr->reset(new Expression(getExpressionPls(stream, nameTable)));
         }
         return move(*root);
     }
 
 
-    inline ExpressionStatement getStatement(TokenStream& ts, NameTable& nameTable) {
-        return getStatementAsg(ts, nameTable);
+    inline Expression getExpression(TokenStream& ts, NameTable& nameTable) {
+        return getExpressionAsg(ts, nameTable);
     }
+
+
+    //
+
+
+    unique_ptr<Statement> getStatement(TokenStream&, NameTable&, bool = false);
+
+
+    //
+
+
+    struct StatementScope : public Statement {
+        // NameTable nameTable;
+        vector<unique_ptr<Statement>> statements;
+    };
+
+
+    struct StatementFunction : public StatementScope {
+        const NameEntry* entryPtr;
+
+        StatementFunction(StatementScope&& _scope, const NameEntry* _entryPtr) :
+            StatementScope(move(_scope)), entryPtr(_entryPtr) {}
+    };
+
+
+    //
+
+
+    StatementScope getStatementsScope(TokenStream& stream, NameTable& parentNameTable, bool globalScope = false) {
+        StatementScope localScope;
+        assert(globalScope || dynamic_cast<const TokenSymbol&>(stream.get()) == '{');
+
+        while (true) {
+            if (stream.eof()) {
+                if (!globalScope) throw CompileException();
+                break;
+            }
+            auto& token = stream.peek();
+
+            if (typeis<TokenSymbol>(token)) {
+                auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
+                if (tokenSymbol == '}') {
+                    stream.get(); break;
+                }
+            }
+
+            //localScope.statements.emplace_back(new Statement(getStatement(stream, localScope.nameTable)));
+            localScope.statements.push_back(getStatement(stream, parentNameTable));
+        }
+        return move(localScope);
+    }
+
+
+    StatementFunction getStatementFunction(TokenStream& stream, NameTable& nameTable) {
+        assert(dynamic_cast<const TokenKeyword&>(stream.get()) == "func");
+        assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ':');
+        auto funcname = dynamic_cast<const TokenKeyword&>(stream.get());
+        if (nameTable.include(funcname.to_string()) ||
+            reservedNameTable.include(funcname.to_string())) {
+            throw CompileException();
+        }
+
+        assert(dynamic_cast<const TokenSymbol&>(stream.get()) == '(');
+        // insert: args
+        assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ')');
+        // insert: scope
+        auto& entryRef = nameTable.trymakeFunctionAddr(funcname.to_string());
+        entryRef.address();
+
+        return StatementFunction(move(getStatementsScope(stream, nameTable)), &entryRef);
+    }
+
+
+    unique_ptr<Statement> getStatement(TokenStream& stream, NameTable& nameTable, bool globalScope) {
+        if (stream.eof()) throw CompileException();
+        auto& token = stream.peek();
+        if (typeis<TokenSymbol>(token)) {
+            // ...
+        }
+        else if (typeis<TokenKeyword>(token)) {
+            auto& tokenKeyword = dynamic_cast<const TokenKeyword&>(token);
+            if (tokenKeyword == "func") {
+                return make_unique<StatementFunction>(getStatementFunction(stream, nameTable));
+            }
+        }
+
+        if (globalScope) throw CompileException();
+        auto&& p = make_unique<Expression>(getExpression(stream, nameTable));
+        assert(stream.get() == ";");
+        return move(p);
+
+    }
+
+
+    //
+
 }
 
 
@@ -712,9 +831,14 @@ namespace Builder {
     };
 
 
+    struct GenerationException : runtime_error {
+        GenerationException(const char* msg = "") :runtime_error(msg) { }
+    };
+
+
     //
 
-    WhiteSpace& convert_integer(WhiteSpace& whitesp, integer val) {
+    WhiteSpace& convertInteger(WhiteSpace& whitesp, integer val) {
 
         // 雑
         if (val < 0) {
@@ -734,16 +858,16 @@ namespace Builder {
     }
 
 
-    WhiteSpace& convert_value(WhiteSpace& whitesp, const ExpressionFactor& factor) {
-        if (typeis<ExpressionValue>(factor)) {
+    WhiteSpace& convertValue(WhiteSpace& whitesp, const Factor& factor) {
+        if (typeis<FactorValue>(factor)) {
             whitesp.push(Instruments::Stack::push);
-            convert_integer(whitesp, dynamic_cast<const ExpressionValue&>(factor).get());
+            convertInteger(whitesp, dynamic_cast<const FactorValue&>(factor).get());
             return whitesp;
         }
-        else if (typeis<ExpressionVariable>(factor)) {
-            auto addr = dynamic_cast<const ExpressionVariable&>(factor).get();
+        else if (typeis<FactorVariable>(factor)) {
+            auto addr = dynamic_cast<const FactorVariable&>(factor).get();
             whitesp.push(Instruments::Stack::push);
-            convert_integer(whitesp, integer(addr));
+            convertInteger(whitesp, integer(addr));
             whitesp.push(Instruments::Heap::retrieve);
             return whitesp;
         }
@@ -751,54 +875,54 @@ namespace Builder {
     }
 
 
-    WhiteSpace& convert_statement(WhiteSpace& whitesp, const ExpressionStatement& exps) {
+    WhiteSpace& convertExpression(WhiteSpace& whitesp, const Expression& exps) {
 
         switch (exps.mode())
         {
         case OperationMode::Value:
-            convert_value(whitesp, exps.factor());
+            convertValue(whitesp, exps.factor());
             return whitesp;
         case OperationMode::Minus:
             whitesp.push(Instruments::Stack::push);
             whitesp.push({ Chr::SP, Chr::LF }); // zero
-            convert_statement(whitesp, exps[0]);
+            convertExpression(whitesp, exps[0]);
             whitesp.push(Instruments::Arithmetic::sub);
             return whitesp;
         case OperationMode::Add:
-            convert_statement(whitesp, exps[0]);
-            convert_statement(whitesp, exps[1]);
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
             whitesp.push(Instruments::Arithmetic::add);
             return whitesp;
         case OperationMode::Subtract:
-            convert_statement(whitesp, exps[0]);
-            convert_statement(whitesp, exps[1]);
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
             whitesp.push(Instruments::Arithmetic::sub);
             return whitesp;
         case OperationMode::Multiply:
-            convert_statement(whitesp, exps[0]);
-            convert_statement(whitesp, exps[1]);
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
             whitesp.push(Instruments::Arithmetic::mul);
             return whitesp;
         case OperationMode::Divide:
-            convert_statement(whitesp, exps[0]);
-            convert_statement(whitesp, exps[1]);
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
             whitesp.push(Instruments::Arithmetic::div);
             return whitesp;
         case OperationMode::Modulo:
-            convert_statement(whitesp, exps[0]);
-            convert_statement(whitesp, exps[1]);
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
             whitesp.push(Instruments::Arithmetic::mod);
             return whitesp;
         case OperationMode::Assign: {
             assert(exps[0].isLvalue());
-            auto addr = dynamic_cast<const ExpressionVariable&>(exps[0].factor()).get();
+            auto addr = dynamic_cast<const FactorVariable&>(exps[0].factor()).get();
             whitesp.push(Instruments::Stack::push);
-            convert_integer(whitesp, integer(addr));
-            convert_statement(whitesp, exps[1]);
+            convertInteger(whitesp, integer(addr));
+            convertExpression(whitesp, exps[1]);
             whitesp.push(Instruments::Heap::store);
 
             whitesp.push(Instruments::Stack::push);
-            convert_integer(whitesp, integer(addr));
+            convertInteger(whitesp, integer(addr));
             whitesp.push(Instruments::Heap::retrieve);
             return whitesp;
         }
@@ -806,15 +930,15 @@ namespace Builder {
             if (exps.id() < 0) {
                 if (exps.id() == -99) { // __xyz todo: enum
                     whitesp.push(Instruments::Stack::push);
-                    convert_integer(whitesp, integer(999));
+                    convertInteger(whitesp, integer(999));
                 }
                 else if (exps.id() == -10) { // __puti todo: enum
-                    convert_statement(whitesp, exps[0]);
+                    convertExpression(whitesp, exps[0]);
                     whitesp.push(Instruments::Stack::duplicate);
                     whitesp.push(Instruments::IO::putnumber);
                 }
                 else if (exps.id() == -11) { // __putc todo: enum
-                    convert_statement(whitesp, exps[0]);
+                    convertExpression(whitesp, exps[0]);
                     whitesp.push(Instruments::Stack::duplicate);
                     whitesp.push(Instruments::IO::putchar);
                 }
@@ -823,7 +947,8 @@ namespace Builder {
                 }
             }
             else {
-                throw OperatorException();
+                whitesp.push(Instruments::Flow::call);
+                convertInteger(whitesp, integer(exps.id()));
             }
             return whitesp;
         }
@@ -831,6 +956,39 @@ namespace Builder {
 
         throw OperatorException();
     }
+
+
+    WhiteSpace& convertStatement(WhiteSpace&, const Statement&);
+
+
+    WhiteSpace& convertScope(WhiteSpace& whitesp, const StatementScope& scope) {
+        for (auto& stat : scope.statements) {
+            convertStatement(whitesp, *stat);
+        }
+        return whitesp;
+    }
+
+
+    WhiteSpace& convertFunction(WhiteSpace& whitesp, const StatementFunction& func) {
+        whitesp.push(Instruments::Flow::label);
+        convertInteger(whitesp, func.entryPtr->address());
+        convertScope(whitesp, dynamic_cast<const StatementScope&>(func));
+        whitesp.push(Instruments::Flow::retun);
+        return whitesp;
+    }
+
+
+    WhiteSpace& convertStatement(WhiteSpace& whitesp, const Statement& stat) {
+        if (typeis<StatementFunction>(stat))
+            return convertFunction(whitesp, dynamic_cast<const StatementFunction&>(stat));
+        if (typeis<StatementScope>(stat))
+            return convertScope(whitesp, dynamic_cast<const StatementScope&>(stat));
+        if (typeis<Expression>(stat))
+            return convertExpression(whitesp, dynamic_cast<const Expression&>(stat));
+
+        throw GenerationException();
+    }
+
 }
 
 
@@ -841,23 +999,41 @@ int main() {
     using namespace Compiler;
     using namespace Builder;
 
+    // embedded definition
+
     reservedNameTable.defineEmbeddedFunction("__xyz", -99, 0);
 
     reservedNameTable.defineEmbeddedFunction("__puti", -10, 1);
     reservedNameTable.defineEmbeddedFunction("__putc", -11, 1);
 
-    TokenStream ts(parseToTokens(cin));
+    // analysis
 
-    WhiteSpace code;
+    TokenStream tokenStream(parseToTokens(cin));
+
     NameTable globalTable;
 
-    while (!ts.eof()) {
-        ExpressionStatement st = getStatement(ts, globalTable);
-        convert_statement(code, st);
-        code.push(Instruments::Stack::discard);
-        ts.get(); // ';'
-    }
+    StatementScope globalScope = getStatementsScope(tokenStream, globalTable, true);
+
+    if (!globalTable.include("main"))
+        throw GenerationException();
+    auto& mainEntry = globalTable.get("main");
+    if (mainEntry.type() != EntryType::Function)
+        throw GenerationException();
+
+
+    WhiteSpace code;
+
+    // header
+
+    code.push(Instruments::Flow::call);
+    convertInteger(code, mainEntry.address());
     code.push(Instruments::Flow::exit);
+
+    // body
+
+    convertScope(code, globalScope);
+
+    // flush
 
     cout << code << flush;
     return 0;
