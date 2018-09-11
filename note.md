@@ -57,16 +57,57 @@ use user-defined function. must define `main` function. all variables are global
 `func:main(){__puti(9);};` is valid. but `return` is invalid.
 `func:f(){__puti(20);};func:main(){f();};` is valid.
 
+### progress 13
+
+must use variable declaration. `let:x;`. 
+
+local variable. 
+
+```
+func:foo(){
+    let:a;
+    a=7;
+    __puti(a);
+}
+func:main(){
+    let:a;
+    a=5;
+    __puti(a);
+    foo();
+    __puti(a);
+}
+```
+
+global variable.
+
+```
+let:a;
+func:foo(){
+    a=7;
+}
+func:main(){
+    a=5;
+    __puti(a);
+    foo();
+    __puti(a);
+}
+```
+
+
 ## feature
 
 ### A1
 
 use build-in function `__geti` and `__getc`.
 
-### B1
+### B3
 
-must use declaration. `let:x;__puti(i);`
+pointer.
 
 ### B2
 
-use array.
+use array.`let:x[5];`. `let:x(1,2,3,4,5);`.
+
+## spec
+
+

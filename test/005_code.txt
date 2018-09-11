@@ -1,0 +1,13 @@
+func:foo(){
+    let:a;
+    a=7;
+    __puti(a);
+}
+
+func:main(){
+    let:a;
+    a=5;
+    __puti(a);
+    foo();
+    __puti(a);
+}

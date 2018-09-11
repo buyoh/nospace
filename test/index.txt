@@ -2,3 +2,5 @@
 002_code.txt    empty.txt   002_expected.txt
 003_code.txt    empty.txt   003_expected.txt
 004_code.txt    empty.txt   004_expected.txt
+005_code.txt    empty.txt   005_expected.txt
+006_code.txt    empty.txt   006_expected.txt

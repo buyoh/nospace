@@ -77,7 +77,7 @@ namespace WS {
             const Chr mod[] = { Chr::TB, Chr::SP, Chr::TB, Chr::TB };
         }
         namespace Heap {
-            const Chr store[] = { Chr::TB, Chr::TB, Chr::SP };
+            const Chr store[] = { Chr::TB, Chr::TB, Chr::SP }; // push the address then the value and run the store command.
             const Chr retrieve[] = { Chr::TB, Chr::TB, Chr::TB };
         }
         namespace Flow {
@@ -284,22 +284,44 @@ namespace Compiler {
     };
 
 
-    // TODO: define NameEntryVariable, NameEntryFunction, NameEntryKeyword
     class NameEntry {
+    protected:
         string name_;
         integer addr_;
-        EntryType type_;
+    public:
+        NameEntry(const string& _name, integer _addr)
+            :name_(_name), addr_(_addr) { }
+        ~NameEntry() {}
+
+        virtual inline const string& name() const { return name_; }
+        virtual inline integer address() const { return addr_; }
+    };
+
+
+    class NameEntryVariable : public NameEntry {
         int length_;
     public:
-        NameEntry(const string& _name, integer _addr, EntryType _type, int _length = 1)
-            :name_(_name), addr_(_addr), type_(_type), length_(_length) { }
+        NameEntryVariable(const string& _name, integer _addr, int _length = 1)
+            :NameEntry(_name, _addr), length_(_length) { }
 
-        const string& name() const { return name_; }
-        integer address() const { return addr_; }
-        EntryType type() const { return type_; }
-        // Variableなら配列サイズ，Functionなら引数個数
-        // 1つの変数に複数の意味持たせるのは良くないよなぁ…
-        integer length() const { return length_; }
+        inline int length() const { return length_; }
+    };
+
+
+    class NameEntryFunction : public NameEntry {
+        int argLength_;
+    public:
+        NameEntryFunction(const string& _name, integer _addr, int _argLength = 1)
+            :NameEntry(_name, _addr), argLength_(_argLength) { }
+
+        inline int argLength() const { return argLength_; }
+    };
+
+
+    class NameEntryKeyword : public NameEntry {
+    public:
+        NameEntryKeyword(const string& _name, integer _addr)
+            :NameEntry(_name, _addr) { }
     };
 
 
@@ -307,20 +329,24 @@ namespace Compiler {
     class NameTable {
     protected:
         unordered_map<string, unique_ptr<NameEntry>> entries_;
+        shared_ptr<NameTable> parent_;
     private:
         integer addrH_; // heap
         integer addrL_; // label
     public:
-        NameTable() :entries_(), addrH_(0), addrL_(0) { }
+        NameTable() 
+            :entries_(), parent_(), addrH_(0), addrL_(0) { }
+        NameTable(shared_ptr<NameTable>& _parent)
+            :entries_(), parent_(_parent), addrH_(0), addrL_(0) { }
 
         const NameEntry& trymakeVariableAddr(const string& name, int length) {
             auto& p = entries_[name];
             if (p) {
-                if (p->type() != EntryType::Variable)
+                if (!typeis<NameEntryVariable>(*p))
                     throw NameException();
             }
             else {
-                p.reset(new NameEntry(name, addrH_, EntryType::Variable, length));
+                p.reset(new NameEntryVariable(name, addrH_, length));
                 addrH_ += length;
             }
             return *p;
@@ -329,23 +355,41 @@ namespace Compiler {
         const NameEntry& trymakeFunctionAddr(const string& name) {
             auto& p = entries_[name];
             if (p) {
-                if (p->type() != EntryType::Function)
+                if (!typeis<NameEntryFunction>(*p))
                     throw NameException();
             }
             else {
-                p.reset(new NameEntry(name, addrL_, EntryType::Function, 1));
+                p.reset(new NameEntryFunction(name, addrL_, 1));
                 addrL_ += 1;
             }
             return *p;
         }
 
-        inline const NameEntry& get(const string& name) const {
+        inline int heapSize() const { return addrH_; }
+        inline bool isGlobal() const { return !parent_; }
+
+        inline const NameEntry& getLocal(const string& name) const {
             return *(entries_.find(name)->second);
         }
 
-        inline bool include(const string& name) const {
+        inline pair<const NameEntry&, const NameTable*> getEntire(const string& name) const {
+            if (includeLocal(name))
+                return pair<const NameEntry&, const NameTable*>(*(entries_.find(name)->second), this);
+            if (!parent_) return pair<const NameEntry&, const NameTable*>(*entries_.end()->second, this);
+            return parent_->getEntire(name);
+        }
+
+        inline bool includeLocal(const string& name) const {
             return entries_.count(name);
         }
+
+        inline bool includeEntire(const string& name) const {
+            return
+                includeLocal(name) ? true :
+                !parent_ ? false :
+                parent_->includeEntire(name);
+        }
+
     };
 
 
@@ -367,19 +411,19 @@ namespace Compiler {
 
         inline void defineKeyword(const string& name, integer id) {
             assert(isKeyword(id));
-            entries_[name].reset(new NameEntry(name, id, EntryType::Keyword));
+            entries_[name].reset(new NameEntryKeyword(name, id));
         }
         inline void defineEmbeddedFunction(const string& name, integer id, int argLength = 1) {
             assert(isFunction(id));
-            entries_[name].reset(new NameEntry(name, id, EntryType::Function, argLength));
+            entries_[name].reset(new NameEntryFunction(name, id, argLength));
         }
 
         inline const NameEntry& get(const string& name) const {
-            return NameTable::get(name);
+            return NameTable::getLocal(name);
         }
 
         inline bool include(const string& name) const {
-            return NameTable::include(name);
+            return NameTable::includeLocal(name);
         }
     };
 
@@ -423,12 +467,14 @@ namespace Compiler {
     };
 
     class FactorVariable : public Factor {
+        integer scope_; // global?: 0 else 1
         integer addr_;
     public:
-        FactorVariable(integer _addr) :addr_(_addr) { }
+        FactorVariable(integer _scope, integer _addr) :scope_(_scope), addr_(_addr) { }
 
-        inline integer& get() { return addr_; }
+        // inline integer& get() { return addr_; }
         inline integer get() const { return addr_; }
+        inline integer scope() const { return scope_; }
     };
 
     class FactorCaller : public Factor {
@@ -526,19 +572,20 @@ namespace Compiler {
 
                 auto& entry = reservedNameTable.get(tokenKeyword.to_string());
 
-                if (entry.type() == EntryType::Keyword) {
+                if (typeis<NameEntryKeyword>(entry)) {
                     throw CompileException();
                 }
-                else if (entry.type() == EntryType::Function) {
-                    Expression exps(entry.address());
-                    exps.resizeArgs(entry.length());
+                else if (typeis<NameEntryFunction>(entry)) {
+                    auto& funcEntry = dynamic_cast<const NameEntryFunction&>(entry);
+                    Expression exps(funcEntry.address());
+                    exps.resizeArgs(funcEntry.argLength());
 
                     try {
                         stream.get();
                         assert(dynamic_cast<const TokenSymbol&>(stream.get()) == '(');
-                        for (int i = 0; i < entry.length(); ++i) {
+                        for (int i = 0; i < funcEntry.argLength(); ++i) {
                             exps.args(i) = move(getExpression(stream, nameTable));
-                            if (i + 1 < entry.length())
+                            if (i + 1 < funcEntry.argLength())
                                 assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ',');
                         }
                         assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ')');
@@ -556,15 +603,26 @@ namespace Compiler {
 
                 if (nextToken == "(") {
                     // function
-                    auto& ref = nameTable.trymakeFunctionAddr(tokenKeyword.to_string());
+                    if (!nameTable.includeEntire(tokenKeyword.to_string()))
+                        throw CompileException();
+
+                    const auto& ref = nameTable.getEntire(tokenKeyword.to_string());
+                    if (!typeis<NameEntryFunction>(ref.first))
+                        throw CompileException();
+
                     assert(dynamic_cast<const TokenSymbol&>(stream.get()) == '(');
                     assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ')');
-                    return make_unique<Expression>(ref.address());
+                    return make_unique<Expression>(ref.first.address());
                 }
                 else {
                     // variable
-                    auto& ref = nameTable.trymakeVariableAddr(tokenKeyword.to_string(), 1);
-                    return make_unique<Expression>(FactorVariable(ref.address()));
+                    if (!nameTable.includeEntire(tokenKeyword.to_string()))
+                        throw CompileException();
+
+                    const auto& ref = nameTable.getEntire(tokenKeyword.to_string());
+                    if (!typeis<NameEntryVariable>(ref.first))
+                        throw CompileException();
+                    return make_unique<Expression>(FactorVariable(ref.second->isGlobal() ? 0 : 1, ref.first.address()));
                 }
 
             }
@@ -725,31 +783,40 @@ namespace Compiler {
     //
 
 
-    unique_ptr<Statement> getStatement(TokenStream&, NameTable&, bool = false);
+    unique_ptr<Statement> getStatement(TokenStream&, shared_ptr<NameTable>&, bool = false);
 
 
     //
 
 
     struct StatementScope : public Statement {
-        // NameTable nameTable;
+        shared_ptr<NameTable> nameTable;
         vector<unique_ptr<Statement>> statements;
+
+        StatementScope() :nameTable(new NameTable()), statements() { }
+        StatementScope(shared_ptr<NameTable>& _parentNameTable, bool)
+            :nameTable(new NameTable(_parentNameTable)), statements() { }
+
+
     };
 
 
     struct StatementFunction : public StatementScope {
-        const NameEntry* entryPtr;
-
-        StatementFunction(StatementScope&& _scope, const NameEntry* _entryPtr) :
-            StatementScope(move(_scope)), entryPtr(_entryPtr) {}
+        integer funcid;
+        StatementFunction(StatementScope&& _scope, integer _funcid) :
+            StatementScope(move(_scope)), funcid(_funcid){
+        }
     };
 
 
     //
 
 
-    unique_ptr<StatementScope> getStatementsScope(TokenStream& stream, NameTable& parentNameTable, bool globalScope = false) {
-        auto localScope = make_unique<StatementScope>();
+    unique_ptr<StatementScope> getStatementsScope(TokenStream& stream, shared_ptr<NameTable>& parentNameTable, bool globalScope = false) {
+        auto localScope = globalScope ?
+            make_unique<StatementScope>():
+            make_unique<StatementScope>(parentNameTable, true);
+
         assert(globalScope || dynamic_cast<const TokenSymbol&>(stream.get()) == '{');
 
         while (true) {
@@ -767,18 +834,33 @@ namespace Compiler {
             }
 
             //localScope.statements.emplace_back(new Statement(getStatement(stream, localScope.nameTable)));
-            localScope->statements.push_back(getStatement(stream, parentNameTable));
+            localScope->statements.push_back(getStatement(stream, localScope->nameTable, globalScope));
+            if (!localScope->statements.back()) localScope->statements.pop_back();
         }
         return localScope;
     }
 
 
-    unique_ptr<StatementFunction> getStatementFunction(TokenStream& stream, NameTable& nameTable) {
+    unique_ptr<StatementFunction> getStatementLet(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
+        assert(dynamic_cast<const TokenKeyword&>(stream.get()) == "let");
+        assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ':');
+        auto& varName = dynamic_cast<const TokenKeyword&>(stream.get());
+        if (nameTable->includeLocal(varName.to_string()) ||
+            reservedNameTable.include(varName.to_string())) {
+            throw CompileException();
+        }
+        nameTable->trymakeVariableAddr(varName.to_string(), 1);
+        assert(stream.get() == ";");
+        return unique_ptr<StatementFunction>(); // empty
+    }
+
+
+    unique_ptr<StatementFunction> getStatementFunction(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
         assert(dynamic_cast<const TokenKeyword&>(stream.get()) == "func");
         assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ':');
-        auto funcname = dynamic_cast<const TokenKeyword&>(stream.get());
-        if (nameTable.include(funcname.to_string()) ||
-            reservedNameTable.include(funcname.to_string())) {
+        auto& funcName = dynamic_cast<const TokenKeyword&>(stream.get());
+        if (nameTable->includeLocal(funcName.to_string()) ||
+            reservedNameTable.include(funcName.to_string())) {
             throw CompileException();
         }
 
@@ -786,14 +868,13 @@ namespace Compiler {
         // insert: args
         assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ')');
         // insert: scope
-        auto& entryRef = nameTable.trymakeFunctionAddr(funcname.to_string());
-        entryRef.address();
+        auto& entryRef = nameTable->trymakeFunctionAddr(funcName.to_string());
 
-        return make_unique<StatementFunction>(move(*getStatementsScope(stream, nameTable)), &entryRef);
+        return make_unique<StatementFunction>(move(*getStatementsScope(stream, nameTable)), entryRef.address());
     }
 
 
-    unique_ptr<Statement> getStatement(TokenStream& stream, NameTable& nameTable, bool globalScope) {
+    unique_ptr<Statement> getStatement(TokenStream& stream, shared_ptr<NameTable>& nameTable, bool globalScope) {
         if (stream.eof()) throw CompileException();
         auto& token = stream.peek();
         if (typeis<TokenSymbol>(token)) {
@@ -802,12 +883,16 @@ namespace Compiler {
         else if (typeis<TokenKeyword>(token)) {
             auto& tokenKeyword = dynamic_cast<const TokenKeyword&>(token);
             if (tokenKeyword == "func") {
+                if (!globalScope) throw CompileException();
                 return getStatementFunction(stream, nameTable);
+            }
+            if (tokenKeyword == "let") {
+                return getStatementLet(stream, nameTable);
             }
         }
 
         if (globalScope) throw CompileException();
-        auto&& p = getExpression(stream, nameTable);
+        auto&& p = getExpression(stream, *nameTable);
         assert(stream.get() == ";");
         return move(p);
 
@@ -827,6 +912,20 @@ namespace Builder {
     using namespace Compiler;
 
 
+    namespace Embedded {
+        // 諸操作に必要なHeap領域．
+        // [0][reserved][localBegin][localEnd][calc][calc][calc][calc]
+        const integer ReservedHeapSize = 8;
+        const integer LocalHeapBegin = 2;
+        const integer LocalHeapEnd = 3;
+        const integer TempPtr = 4;
+        const integer GlobalPtr = 8;
+    }
+
+
+    // class CodeBuilder{}; // TODO:
+
+
     struct OperatorException : runtime_error {
         OperatorException(const char* msg = "") :runtime_error(msg) { }
     };
@@ -838,6 +937,7 @@ namespace Builder {
 
 
     //
+
 
     WhiteSpace& convertInteger(WhiteSpace& whitesp, integer val) {
 
@@ -859,6 +959,100 @@ namespace Builder {
     }
 
 
+    // WhiteSpace& convertSwap(WhiteSpace& whitesp, integer destPtr, integer fromPtr) {
+    // 
+    // }
+
+
+    // *destPtr = *fromPtr
+    WhiteSpace& convertCopy(WhiteSpace& whitesp, integer destPtr, integer fromPtr) {
+        whitesp.push(Instruments::Stack::push);
+        convertInteger(whitesp, integer(fromPtr));
+        whitesp.push(Instruments::Heap::retrieve);
+        whitesp.push(Instruments::Stack::push);
+        convertInteger(whitesp, integer(destPtr));
+        whitesp.push(Instruments::Stack::swap);
+        whitesp.push(Instruments::Heap::store);
+        return whitesp;
+    }
+
+
+    //
+
+
+    // subroutine label の後に挿入する：
+    WhiteSpace& convertLocalAllocate(WhiteSpace& whitesp, const StatementFunction& func) {
+        // - local_begin を stack に積む
+        whitesp.push(Instruments::Stack::push);
+        convertInteger(whitesp, Embedded::LocalHeapBegin);
+        whitesp.push(Instruments::Heap::retrieve);
+        // - local_begin := local_end．(dup local_end)
+        whitesp.push(Instruments::Stack::push);
+        convertInteger(whitesp, Embedded::LocalHeapEnd);
+        whitesp.push(Instruments::Heap::retrieve);
+        whitesp.push(Instruments::Stack::duplicate); // dup!
+        whitesp.push(Instruments::Stack::push);
+        convertInteger(whitesp, Embedded::LocalHeapBegin);
+        whitesp.push(Instruments::Stack::swap);
+        whitesp.push(Instruments::Heap::store);
+        // remain local_begin value on stack.
+        // - local_end := local_begin(stacked by dup) + scopesize．
+        whitesp.push(Instruments::Stack::push);
+        convertInteger(whitesp, func.nameTable->heapSize());
+        whitesp.push(Instruments::Arithmetic::add);
+        whitesp.push(Instruments::Stack::push);
+        convertInteger(whitesp, Embedded::LocalHeapEnd);
+        whitesp.push(Instruments::Stack::swap);
+        whitesp.push(Instruments::Heap::store);
+        return whitesp;
+        
+    }
+
+
+    // call の後に挿入する：
+    WhiteSpace& convertLocalDeallocate(WhiteSpace& whitesp) {
+        // return するとき，
+        // - local_end := local_begin．
+        convertCopy(whitesp, Embedded::LocalHeapEnd, Embedded::LocalHeapBegin);
+        // - local_begin を stack から取り出す
+        whitesp.push(Instruments::Stack::push);
+        convertInteger(whitesp, Embedded::LocalHeapBegin);
+        whitesp.push(Instruments::Stack::swap);
+        whitesp.push(Instruments::Heap::store);
+        return whitesp;
+    }
+
+
+    WhiteSpace& convertCalculateLocalVariablePtr(WhiteSpace& whitesp, integer addr) {
+        whitesp.push(Instruments::Stack::push);
+        convertInteger(whitesp, addr);
+
+        whitesp.push(Instruments::Stack::push);
+        convertInteger(whitesp, Embedded::LocalHeapBegin);
+        whitesp.push(Instruments::Heap::retrieve);
+
+        whitesp.push(Instruments::Arithmetic::add);
+        return whitesp;
+    }
+
+
+    WhiteSpace& convertCalculateLocalVariablePtr(WhiteSpace& whitesp, const FactorVariable& var) {
+        
+        if (var.scope() > 0)
+            // local
+            return convertCalculateLocalVariablePtr(whitesp, var.get());
+        else {
+            // global
+            whitesp.push(Instruments::Stack::push);
+            convertInteger(whitesp, var.get() + Embedded::GlobalPtr);
+            return whitesp;
+        }
+    }
+
+
+    //
+
+
     WhiteSpace& convertValue(WhiteSpace& whitesp, const Factor& factor) {
         if (typeis<FactorValue>(factor)) {
             whitesp.push(Instruments::Stack::push);
@@ -866,9 +1060,10 @@ namespace Builder {
             return whitesp;
         }
         else if (typeis<FactorVariable>(factor)) {
-            auto addr = dynamic_cast<const FactorVariable&>(factor).get();
-            whitesp.push(Instruments::Stack::push);
-            convertInteger(whitesp, integer(addr));
+            const auto& var = dynamic_cast<const FactorVariable&>(factor);
+            // calculate addr
+            convertCalculateLocalVariablePtr(whitesp, var);
+            // retirieve
             whitesp.push(Instruments::Heap::retrieve);
             return whitesp;
         }
@@ -916,14 +1111,13 @@ namespace Builder {
             return whitesp;
         case OperationMode::Assign: {
             assert(exps[0].isLvalue());
-            auto addr = dynamic_cast<const FactorVariable&>(exps[0].factor()).get();
-            whitesp.push(Instruments::Stack::push);
-            convertInteger(whitesp, integer(addr));
+            const auto& var = dynamic_cast<const FactorVariable&>(exps[0].factor()); // thrower
+
+            convertCalculateLocalVariablePtr(whitesp, var);
             convertExpression(whitesp, exps[1]);
             whitesp.push(Instruments::Heap::store);
 
-            whitesp.push(Instruments::Stack::push);
-            convertInteger(whitesp, integer(addr));
+            convertCalculateLocalVariablePtr(whitesp, var); // TODO: 
             whitesp.push(Instruments::Heap::retrieve);
             return whitesp;
         }
@@ -950,6 +1144,11 @@ namespace Builder {
             else {
                 whitesp.push(Instruments::Flow::call);
                 convertInteger(whitesp, integer(exps.id()));
+
+                convertLocalDeallocate(whitesp);
+
+                whitesp.push(Instruments::Stack::push); // always return 0
+                convertInteger(whitesp, 0);
             }
             return whitesp;
         }
@@ -972,8 +1171,11 @@ namespace Builder {
 
     WhiteSpace& convertFunction(WhiteSpace& whitesp, const StatementFunction& func) {
         whitesp.push(Instruments::Flow::label);
-        convertInteger(whitesp, func.entryPtr->address());
+        convertInteger(whitesp, func.funcid);
+        convertLocalAllocate(whitesp, func);
+
         convertScope(whitesp, dynamic_cast<const StatementScope&>(func));
+
         whitesp.push(Instruments::Flow::retun);
         return whitesp;
     }
@@ -984,8 +1186,11 @@ namespace Builder {
             return convertFunction(whitesp, dynamic_cast<const StatementFunction&>(stat));
         if (typeis<StatementScope>(stat))
             return convertScope(whitesp, dynamic_cast<const StatementScope&>(stat));
-        if (typeis<Expression>(stat))
-            return convertExpression(whitesp, dynamic_cast<const Expression&>(stat));
+        if (typeis<Expression>(stat)) {
+            convertExpression(whitesp, dynamic_cast<const Expression&>(stat));
+            whitesp.push(Instruments::Stack::discard);
+            return whitesp;
+        }
 
         throw GenerationException();
     }
@@ -994,7 +1199,7 @@ namespace Builder {
 
 
 
-int main() {
+int main(int argc, char** argv) {
     using namespace WS;
     using namespace Parser;
     using namespace Compiler;
@@ -1011,20 +1216,32 @@ int main() {
 
     TokenStream tokenStream(parseToTokens(cin));
 
-    NameTable globalTable;
+    shared_ptr<NameTable> dammyNT;
 
-    StatementScope globalScope = move(*getStatementsScope(tokenStream, globalTable, true));
+    StatementScope globalScope = move(*getStatementsScope(tokenStream, dammyNT, true));
 
-    if (!globalTable.include("main"))
+    if (!globalScope.nameTable->includeLocal("main"))
         throw GenerationException();
-    auto& mainEntry = globalTable.get("main");
-    if (mainEntry.type() != EntryType::Function)
+    auto& mainEntry = globalScope.nameTable->getLocal("main");
+    if (!typeis<NameEntryFunction>(mainEntry))
         throw GenerationException();
-
 
     WhiteSpace code;
 
     // header
+
+    code.push(Instruments::Stack::push); //
+    convertInteger(code, Embedded::LocalHeapBegin);
+    code.push(Instruments::Stack::push);
+    convertInteger(code, Embedded::GlobalPtr);
+    code.push(Instruments::Heap::store);
+
+    code.push(Instruments::Stack::push); //
+    convertInteger(code, Embedded::LocalHeapEnd);
+    code.push(Instruments::Stack::push);
+    convertInteger(code, Embedded::GlobalPtr + globalScope.nameTable->heapSize());
+    code.push(Instruments::Heap::store);
+
 
     code.push(Instruments::Flow::call);
     convertInteger(code, mainEntry.address());
@@ -1039,3 +1256,45 @@ int main() {
     cout << code << flush;
     return 0;
 }
+
+
+
+// 欲しい情報
+// globalVariable を呼ぶために：
+// 1つ上のlocalVariable を呼ぶために：
+// localVariable を呼ぶために：  スコープの階層
+// これらは今実行中の関数で決まる（決めなければならない）
+// globalVar_begin,size : 定数(実行時常に不変)
+// 今はいらないが後で必要：呼び出し元のlocalvalue
+// これは呼び出し元の関数で決まる
+
+// 内部スコープが無いと仮定．つまり，グローバルか，1層のfuncか．
+// call するとき，
+// - local_begin を stack に積む
+// - local_begin := local_end．
+// - local_end := local_begin + scopesize．
+// return するとき，
+// - local_end := local_begin．
+// - local_begin を stack から取り出す
+
+
+/*
+
+let:v1;
+func:a(){
+    let:v2;
+    {
+        let:v3;
+        // HERE
+    }
+}
+func:main(){
+    let:v4;
+    a();
+}
+
+v1,v2,v3は参照可能であるべき
+v4は出来ないが，
+
+
+*/

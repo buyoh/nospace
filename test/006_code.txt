@@ -1,0 +1,19 @@
+let:a;
+let:b;
+func:f(){
+    let:b;
+    __puti(a);
+    a=2;
+    b=2;
+    __puti(b);
+}
+func:main(){
+    let:b;
+    a=1;
+    b=1;
+    __puti(a);
+    __puti(b);
+    f();
+    __puti(a);
+    __puti(b);
+}
