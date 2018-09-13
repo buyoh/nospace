@@ -103,6 +103,12 @@ in func scope, you can descript `let`, expressions.
 in statement scope(`if` `while`), you can descript expressions.
 
 
+### progress 15
+
+`else`, `elsif`.
+`if(cond1){}elsif(cond2){}else{}`.
+
+
 ## feature
 
 ### A1

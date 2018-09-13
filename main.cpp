@@ -853,37 +853,6 @@ namespace Compiler {
         integer getLabelLast() const {
             return elsif ? elsif->getLabelLast() : label;
         }
-
-        // if only
-        // [label0@if]
-        // zj label1@if
-        // block
-        // [label1@if]
-
-        // ifelse
-        // [label0@if]
-        // zj label1@if
-        // block
-        // j label1@else
-        // [label1@if]
-        // [label0@else]
-        // block
-        // [label1@else]
-
-        // elsif
-        // [label0@if]
-        // zj label1@if
-        // block
-        // j label1@else
-        // [label1@if]
-        // [label0@elsif]
-        // zj label1@elsif
-        // block
-        // j label1@else
-        // [label1@elsif]
-        // [label0@else]
-        // block
-        // [label1@else]
     };
 
 
@@ -992,15 +961,58 @@ namespace Compiler {
     }
 
 
+    unique_ptr<StatementIf> getStatementElse(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
+        assert(dynamic_cast<const TokenKeyword&>(stream.get()) == "else");
+        auto label = nameTable->reserveLabelAddr(2);
+        return make_unique<StatementIf>(move(*getStatementsOpenScope(stream, nameTable)), label);
+    }
+
+
+    unique_ptr<StatementIf> getStatementElsif(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
+        // getStatementIfと全く同じですね．
+        assert(dynamic_cast<const TokenKeyword&>(stream.get()) == "elsif");
+        assert(dynamic_cast<const TokenSymbol&>(stream.get()) == '(');
+        auto&& condition = getExpression(stream, *nameTable);
+        assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ')');
+        auto label = nameTable->reserveLabelAddr(2);
+        auto ifscope = make_unique<StatementIf>(move(*getStatementsOpenScope(stream, nameTable)), move(condition), label);
+
+        const auto& token = stream.peek();
+        if (typeis<TokenKeyword>(token)) {
+            if (token == "elsif") {
+                ifscope->elsif = getStatementElsif(stream, nameTable);
+                return move(ifscope);
+            }
+            else if (token == "else") {
+                ifscope->elsif = getStatementElse(stream, nameTable);
+                return move(ifscope);
+            }
+        }
+
+        return move(ifscope);
+    }
+
+
     unique_ptr<StatementIf> getStatementIf(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
         assert(dynamic_cast<const TokenKeyword&>(stream.get()) == "if");
         assert(dynamic_cast<const TokenSymbol&>(stream.get()) == '(');
         auto&& condition = getExpression(stream, *nameTable);
         assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ')');
         auto label = nameTable->reserveLabelAddr(2);
-        auto&& ifscope = make_unique<StatementIf>(move(*getStatementsOpenScope(stream, nameTable)), move(condition), label);
+        auto ifscope = make_unique<StatementIf>(move(*getStatementsOpenScope(stream, nameTable)), move(condition), label);
 
-        // TODO: elsif
+        const auto& token = stream.peek();
+        if (typeis<TokenKeyword>(token)) {
+            if (token == "elsif") {
+                ifscope->elsif = getStatementElsif(stream, nameTable);
+                return move(ifscope);
+            }
+            else if (token == "else") {
+                ifscope->elsif = getStatementElse(stream, nameTable);
+                return move(ifscope);
+            }
+        }
+
         return move(ifscope);
     }
 
@@ -1363,21 +1375,32 @@ namespace Builder {
     }
 
 
+    // elsif, else も処理する
     WhiteSpace& convertIf(WhiteSpace& whitesp, const StatementIf& ifstat) {
 
         integer label = ifstat.label;
 
-        whitesp.push(Instruments::Flow::label); // 使わない．飾り．
+        whitesp.push(Instruments::Flow::label);
         convertInteger(whitesp, label);
 
-        convertExpression(whitesp, *(ifstat.cond));
-        whitesp.push(Instruments::Flow::zerojump);
-        convertInteger(whitesp, label + 1);
+        if (ifstat.cond) {
+            convertExpression(whitesp, *(ifstat.cond));
+            whitesp.push(Instruments::Flow::zerojump);
+            convertInteger(whitesp, label + 1);
+        }
 
         convertOpenScope(whitesp, ifstat);
 
+        if (ifstat.elsif) {
+            whitesp.push(Instruments::Flow::jump);
+            convertInteger(whitesp, ifstat.getLabelLast() + 1);
+        }
+
         whitesp.push(Instruments::Flow::label);
         convertInteger(whitesp, label + 1);
+
+        if (ifstat.elsif)
+            convertIf(whitesp, *(ifstat.elsif));
 
         return whitesp;
     }
@@ -1417,7 +1440,6 @@ int main(int argc, char** argv) {
 
     reservedNameTable.defineEmbeddedFunction("__puti", -10, 1);
     reservedNameTable.defineEmbeddedFunction("__putc", -11, 1);
-    reservedNameTable.defineEmbeddedFunction("__geti", -1, 1);
 
     // analysis
 
@@ -1505,3 +1527,36 @@ v4は出来ないが，
 
 
 */
+
+// ifのラベルの貼り方とジャンプ
+
+// if only
+// [label0@if]
+// zj label1@if
+// block
+// [label1@if]
+
+// ifelse
+// [label0@if]
+// zj label1@if
+// block
+// j label1@else
+// [label1@if]
+// [label0@else]
+// block
+// [label1@else]
+
+// elsif
+// [label0@if]
+// zj label1@if
+// block
+// j label1@else
+// [label1@if]
+// [label0@elsif]
+// zj label1@elsif
+// block
+// j label1@else
+// [label1@elsif]
+// [label0@else]
+// block
+// [label1@else]

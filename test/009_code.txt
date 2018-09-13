@@ -1,0 +1,33 @@
+func:main(){
+    let: a; let: b;
+
+    a = 10; b = 20;
+    if (a - 10){
+        __puti(1);
+    }elsif (b - 20){
+        __puti(2);
+    }else{
+        __puti(3);
+    }
+    if (a - 9){
+        __puti(4);
+    }elsif (b - 20){
+        __puti(5);
+    }else{
+        __puti(6);
+    }
+    if (a - 10){
+        __puti(7);
+    }elsif (b - 19){
+        __puti(8);
+    }else{
+        __puti(9);
+    }
+    if (a - 9){
+        __puti(10);
+    }elsif (b - 19){
+        __puti(11);
+    }else{
+        __puti(12);
+    }
+}
