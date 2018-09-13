@@ -171,8 +171,8 @@ class WhitespaceInterpreter
     end
     
     def getint
-        a = @stdin.scanf("%d") # todo: rubyのscanfは怪しそう
-        a.empty? ? 0 : a[0]
+        a = @stdin.gets
+        a ? a.to_i : 0
     end
     
     

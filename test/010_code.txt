@@ -1,0 +1,15 @@
+func:main(){
+    let: N;
+    N = __geti();
+    if (N - 2){
+        __puti(-2);
+    }else{
+        __puti(2);
+    }
+    N = __geti();
+    if (N - 5){
+        __puti(-5);
+    }else{
+        __puti(5);
+    }
+}

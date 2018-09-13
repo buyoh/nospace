@@ -1297,6 +1297,14 @@ namespace Builder {
                     whitesp.push(Instruments::Stack::duplicate);
                     whitesp.push(Instruments::IO::putchar);
                 }
+                else if (exps.id() == -20) { // __geti todo: enum
+                    whitesp.push(Instruments::Stack::push);
+                    convertInteger(whitesp, Embedded::TempPtr);
+                    whitesp.push(Instruments::IO::getnumber);
+                    whitesp.push(Instruments::Stack::push);
+                    convertInteger(whitesp, Embedded::TempPtr);
+                    whitesp.push(Instruments::Heap::retrieve);
+                }
                 else {
                     throw OperatorException();
                 }
@@ -1440,6 +1448,7 @@ int main(int argc, char** argv) {
 
     reservedNameTable.defineEmbeddedFunction("__puti", -10, 1);
     reservedNameTable.defineEmbeddedFunction("__putc", -11, 1);
+    reservedNameTable.defineEmbeddedFunction("__geti", -20, 0);
 
     // analysis
 

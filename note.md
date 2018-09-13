@@ -109,6 +109,11 @@ in statement scope(`if` `while`), you can descript expressions.
 `if(cond1){}elsif(cond2){}else{}`.
 
 
+### progress 16
+
+`__geti()`.
+
+
 ## feature
 
 ### A1

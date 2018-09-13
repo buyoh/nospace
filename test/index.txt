@@ -7,3 +7,5 @@
 007_code.txt    empty.txt   007_expected.txt
 008_code.txt    empty.txt   008_expected.txt
 009_code.txt    empty.txt   009_expected.txt
+010_code.txt    010_stdin.txt   010_expected.txt
+yukicoder646_1_code.txt yukicoder646_1_stdin.txt yukicoder646_1_expected.txt
