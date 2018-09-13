@@ -1,6 +1,6 @@
 func:main(){
-    let:i;
-    i=9;
+    let:x;
+    x=9;
     while(x){
         __puti(x);
         x=x-1;

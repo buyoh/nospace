@@ -367,8 +367,7 @@ namespace Compiler {
 
         // 無名スコープのジャンプ(ifなど)に必要なラベルを確保する．
         inline integer reserveLabelAddr(int size) {
-            addrL_ += size;
-            return size;
+            return addrL_ += size;
         }
 
         inline integer localHeapSize() const { return addrH_; }
@@ -1389,6 +1388,10 @@ namespace Builder {
             return convertFunction(whitesp, dynamic_cast<const StatementFunction&>(stat));
         if (typeis<StatementScope>(stat)) // 未実装()
             return convertScope(whitesp, dynamic_cast<const StatementScope&>(stat));
+        if (typeis<StatementIf>(stat))
+            return convertIf(whitesp, dynamic_cast<const StatementIf&>(stat));
+        if (typeis<StatementWhile>(stat))
+            return convertWhile(whitesp, dynamic_cast<const StatementWhile&>(stat));
         if (typeis<Expression>(stat)) {
             convertExpression(whitesp, dynamic_cast<const Expression&>(stat));
             whitesp.push(Instruments::Stack::discard);
@@ -1414,6 +1417,7 @@ int main(int argc, char** argv) {
 
     reservedNameTable.defineEmbeddedFunction("__puti", -10, 1);
     reservedNameTable.defineEmbeddedFunction("__putc", -11, 1);
+    reservedNameTable.defineEmbeddedFunction("__geti", -1, 1);
 
     // analysis
 
