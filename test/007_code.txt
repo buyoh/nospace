@@ -1,0 +1,17 @@
+func:main(){
+    let:x;
+    x=20;
+    __puti(0);
+    if(x-20){
+        __puti(1);
+    }
+    __puti(2);
+    if(x-21){
+        __puti(3);
+    }
+    __puti(4);
+    if(x-19){
+        __puti(5);
+    }
+    __puti(6);
+}

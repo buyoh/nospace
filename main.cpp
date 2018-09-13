@@ -334,7 +334,7 @@ namespace Compiler {
         integer addrH_; // heap
         integer addrL_; // label
     public:
-        NameTable() 
+        NameTable()
             :entries_(), parent_(), addrH_(0), addrL_(0) { }
         NameTable(shared_ptr<NameTable>& _parent)
             :entries_(), parent_(_parent), addrH_(0), addrL_(0) { }
@@ -360,12 +360,18 @@ namespace Compiler {
             }
             else {
                 p.reset(new NameEntryFunction(name, addrL_, 1));
-                addrL_ += 1;
+                addrL_ += 2; // TODO: beginとend
             }
             return *p;
         }
 
-        inline int heapSize() const { return addrH_; }
+        // 無名スコープのジャンプ(ifなど)に必要なラベルを確保する．
+        inline integer reserveLabelAddr(int size) {
+            addrL_ += size;
+            return size;
+        }
+
+        inline integer localHeapSize() const { return addrH_; }
         inline bool isGlobal() const { return !parent_; }
 
         inline const NameEntry& getLocal(const string& name) const {
@@ -783,7 +789,7 @@ namespace Compiler {
     //
 
 
-    unique_ptr<Statement> getStatement(TokenStream&, shared_ptr<NameTable>&, bool = false);
+    unique_ptr<Statement> getStatement(TokenStream&, shared_ptr<NameTable>&, bool, bool, bool);
 
 
     //
@@ -802,19 +808,92 @@ namespace Compiler {
 
 
     struct StatementFunction : public StatementScope {
-        integer funcid;
-        StatementFunction(StatementScope&& _scope, integer _funcid) :
-            StatementScope(move(_scope)), funcid(_funcid){
+        integer funcLabel;
+        StatementFunction(StatementScope&& _scope, integer _funcLabel) :
+            StatementScope(move(_scope)), funcLabel(_funcLabel) {
         }
+    };
+
+
+    // TODO: 無くす方向で
+    // if,while等のlet,funcが使えないスコープ
+    struct StatementOpenScope : public Statement {
+        weak_ptr<NameTable> parentNameTable;
+        vector<unique_ptr<Statement>> statements;
+
+        StatementOpenScope(shared_ptr<NameTable>& _parentNameTable, bool)
+            :parentNameTable(_parentNameTable), statements() { }
+    };
+
+    // while文．
+    struct StatementWhile : public StatementOpenScope {
+        integer label;
+        unique_ptr<Expression> cond;
+
+        StatementWhile(StatementOpenScope&& _scope, unique_ptr<Expression>&& _cond, integer _label) :
+            StatementOpenScope(move(_scope)), label(_label), cond(move(_cond)) {
+        }
+    };
+
+
+    // if文
+    // elsifに後続するelseを入れる．
+    struct StatementIf : public StatementOpenScope {
+        integer label;
+        unique_ptr<Expression> cond;
+        unique_ptr<StatementIf> elsif;
+
+        StatementIf(StatementOpenScope&& _scope, unique_ptr<Expression>&& _cond, integer _label) :
+            StatementOpenScope(move(_scope)), label(_label), cond(move(_cond)) {
+        }
+
+        StatementIf(StatementOpenScope&& _scope, integer _label) :
+            StatementOpenScope(move(_scope)), label(_label) {
+        }
+
+        integer getLabelLast() const {
+            return elsif ? elsif->getLabelLast() : label;
+        }
+
+        // if only
+        // [label0@if]
+        // zj label1@if
+        // block
+        // [label1@if]
+
+        // ifelse
+        // [label0@if]
+        // zj label1@if
+        // block
+        // j label1@else
+        // [label1@if]
+        // [label0@else]
+        // block
+        // [label1@else]
+
+        // elsif
+        // [label0@if]
+        // zj label1@if
+        // block
+        // j label1@else
+        // [label1@if]
+        // [label0@elsif]
+        // zj label1@elsif
+        // block
+        // j label1@else
+        // [label1@elsif]
+        // [label0@else]
+        // block
+        // [label1@else]
     };
 
 
     //
 
 
-    unique_ptr<StatementScope> getStatementsScope(TokenStream& stream, shared_ptr<NameTable>& parentNameTable, bool globalScope = false) {
+    unique_ptr<StatementScope> getStatementsScope(TokenStream& stream, shared_ptr<NameTable>& parentNameTable, bool globalScope) {
         auto localScope = globalScope ?
-            make_unique<StatementScope>():
+            make_unique<StatementScope>() :
             make_unique<StatementScope>(parentNameTable, true);
 
         assert(globalScope || dynamic_cast<const TokenSymbol&>(stream.get()) == '{');
@@ -834,14 +913,43 @@ namespace Compiler {
             }
 
             //localScope.statements.emplace_back(new Statement(getStatement(stream, localScope.nameTable)));
-            localScope->statements.push_back(getStatement(stream, localScope->nameTable, globalScope));
+            localScope->statements.push_back(getStatement(stream, localScope->nameTable, globalScope, !globalScope, false));
             if (!localScope->statements.back()) localScope->statements.pop_back();
         }
         return localScope;
     }
 
 
-    unique_ptr<StatementFunction> getStatementLet(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
+    // TODO: 無くす方向で
+    // if,while等のlet,funcが使えないスコープ
+    unique_ptr<StatementOpenScope> getStatementsOpenScope(TokenStream& stream, shared_ptr<NameTable>& parentNameTable) {
+        auto scope = make_unique<StatementOpenScope>(parentNameTable, true);
+
+        assert(dynamic_cast<const TokenSymbol&>(stream.get()) == '{');
+
+        while (true) {
+            if (stream.eof()) {
+                throw CompileException();
+                break;
+            }
+            auto& token = stream.peek();
+
+            if (typeis<TokenSymbol>(token)) {
+                auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
+                if (tokenSymbol == '}') {
+                    stream.get(); break;
+                }
+            }
+
+            //localScope.statements.emplace_back(new Statement(getStatement(stream, localScope.nameTable)));
+            scope->statements.push_back(getStatement(stream, parentNameTable, false, true, true));
+            if (!scope->statements.back()) scope->statements.pop_back();
+        }
+        return scope;
+    }
+
+
+    unique_ptr<Statement> getStatementLet(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
         assert(dynamic_cast<const TokenKeyword&>(stream.get()) == "let");
         assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ':');
         auto& varName = dynamic_cast<const TokenKeyword&>(stream.get());
@@ -851,7 +959,7 @@ namespace Compiler {
         }
         nameTable->trymakeVariableAddr(varName.to_string(), 1);
         assert(stream.get() == ";");
-        return unique_ptr<StatementFunction>(); // empty
+        return unique_ptr<Statement>(); // empty
     }
 
 
@@ -870,11 +978,37 @@ namespace Compiler {
         // insert: scope
         auto& entryRef = nameTable->trymakeFunctionAddr(funcName.to_string());
 
-        return make_unique<StatementFunction>(move(*getStatementsScope(stream, nameTable)), entryRef.address());
+        // todo: unique_ptrの中身をmoveする操作は正しいか？
+        return make_unique<StatementFunction>(move(*getStatementsScope(stream, nameTable, false)), entryRef.address());
     }
 
 
-    unique_ptr<Statement> getStatement(TokenStream& stream, shared_ptr<NameTable>& nameTable, bool globalScope) {
+    unique_ptr<StatementWhile> getStatementWhile(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
+        assert(dynamic_cast<const TokenKeyword&>(stream.get()) == "while");
+        assert(dynamic_cast<const TokenSymbol&>(stream.get()) == '(');
+        auto&& condition = getExpression(stream, *nameTable);
+        assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ')');
+        auto label = nameTable->reserveLabelAddr(2);
+        return make_unique<StatementWhile>(move(*getStatementsOpenScope(stream, nameTable)), move(condition), label);
+    }
+
+
+    unique_ptr<StatementIf> getStatementIf(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
+        assert(dynamic_cast<const TokenKeyword&>(stream.get()) == "if");
+        assert(dynamic_cast<const TokenSymbol&>(stream.get()) == '(');
+        auto&& condition = getExpression(stream, *nameTable);
+        assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ')');
+        auto label = nameTable->reserveLabelAddr(2);
+        auto&& ifscope = make_unique<StatementIf>(move(*getStatementsOpenScope(stream, nameTable)), move(condition), label);
+
+        // TODO: elsif
+        return move(ifscope);
+    }
+
+
+    unique_ptr<Statement> getStatement(TokenStream& stream, shared_ptr<NameTable>& nameTable,
+        bool disableExpr, bool disableFunc, bool disableLet) {
+
         if (stream.eof()) throw CompileException();
         auto& token = stream.peek();
         if (typeis<TokenSymbol>(token)) {
@@ -883,15 +1017,30 @@ namespace Compiler {
         else if (typeis<TokenKeyword>(token)) {
             auto& tokenKeyword = dynamic_cast<const TokenKeyword&>(token);
             if (tokenKeyword == "func") {
-                if (!globalScope) throw CompileException();
+                if (disableFunc) throw CompileException();
                 return getStatementFunction(stream, nameTable);
             }
             if (tokenKeyword == "let") {
+                if (disableLet) throw CompileException();
                 return getStatementLet(stream, nameTable);
             }
         }
 
-        if (globalScope) throw CompileException();
+        if (disableExpr) throw CompileException();
+
+        if (typeis<TokenSymbol>(token)) {
+            // ...
+        }
+        else if (typeis<TokenKeyword>(token)) {
+            auto& tokenKeyword = dynamic_cast<const TokenKeyword&>(token);
+            if (tokenKeyword == "if") {
+                return getStatementIf(stream, nameTable);
+            }
+            if (tokenKeyword == "while") {
+                return getStatementWhile(stream, nameTable);
+            }
+        }
+
         auto&& p = getExpression(stream, *nameTable);
         assert(stream.get() == ";");
         return move(p);
@@ -998,14 +1147,14 @@ namespace Builder {
         // remain local_begin value on stack.
         // - local_end := local_begin(stacked by dup) + scopesize．
         whitesp.push(Instruments::Stack::push);
-        convertInteger(whitesp, func.nameTable->heapSize());
+        convertInteger(whitesp, func.nameTable->localHeapSize());
         whitesp.push(Instruments::Arithmetic::add);
         whitesp.push(Instruments::Stack::push);
         convertInteger(whitesp, Embedded::LocalHeapEnd);
         whitesp.push(Instruments::Stack::swap);
         whitesp.push(Instruments::Heap::store);
         return whitesp;
-        
+
     }
 
 
@@ -1037,7 +1186,7 @@ namespace Builder {
 
 
     WhiteSpace& convertCalculateLocalVariablePtr(WhiteSpace& whitesp, const FactorVariable& var) {
-        
+
         if (var.scope() > 0)
             // local
             return convertCalculateLocalVariablePtr(whitesp, var.get());
@@ -1169,14 +1318,68 @@ namespace Builder {
     }
 
 
+    WhiteSpace& convertOpenScope(WhiteSpace& whitesp, const StatementOpenScope& scope) {
+        for (auto& stat : scope.statements) {
+            convertStatement(whitesp, *stat);
+        }
+        return whitesp;
+    }
+
+
     WhiteSpace& convertFunction(WhiteSpace& whitesp, const StatementFunction& func) {
+        integer label = func.funcLabel;
+        // TODO: insert here: goto label+1;
         whitesp.push(Instruments::Flow::label);
-        convertInteger(whitesp, func.funcid);
+        convertInteger(whitesp, label);
         convertLocalAllocate(whitesp, func);
 
         convertScope(whitesp, dynamic_cast<const StatementScope&>(func));
 
         whitesp.push(Instruments::Flow::retun);
+
+        whitesp.push(Instruments::Flow::label);
+        convertInteger(whitesp, label + 1);
+        return whitesp;
+    }
+
+
+    WhiteSpace& convertWhile(WhiteSpace& whitesp, const StatementWhile& whilestat) {
+        integer label = whilestat.label;
+
+        whitesp.push(Instruments::Flow::label);
+        convertInteger(whitesp, label);
+
+        convertExpression(whitesp, *(whilestat.cond));
+        whitesp.push(Instruments::Flow::zerojump);
+        convertInteger(whitesp, label+1);
+
+        convertOpenScope(whitesp, whilestat);
+
+        whitesp.push(Instruments::Flow::jump); // loop
+        convertInteger(whitesp, label);
+        whitesp.push(Instruments::Flow::label);
+        convertInteger(whitesp, label+1);
+
+        return whitesp;
+    }
+
+
+    WhiteSpace& convertIf(WhiteSpace& whitesp, const StatementIf& ifstat) {
+
+        integer label = ifstat.label;
+
+        whitesp.push(Instruments::Flow::label); // 使わない．飾り．
+        convertInteger(whitesp, label);
+
+        convertExpression(whitesp, *(ifstat.cond));
+        whitesp.push(Instruments::Flow::zerojump);
+        convertInteger(whitesp, label + 1);
+
+        convertOpenScope(whitesp, ifstat);
+
+        whitesp.push(Instruments::Flow::label);
+        convertInteger(whitesp, label + 1);
+
         return whitesp;
     }
 
@@ -1184,7 +1387,7 @@ namespace Builder {
     WhiteSpace& convertStatement(WhiteSpace& whitesp, const Statement& stat) {
         if (typeis<StatementFunction>(stat))
             return convertFunction(whitesp, dynamic_cast<const StatementFunction&>(stat));
-        if (typeis<StatementScope>(stat))
+        if (typeis<StatementScope>(stat)) // 未実装()
             return convertScope(whitesp, dynamic_cast<const StatementScope&>(stat));
         if (typeis<Expression>(stat)) {
             convertExpression(whitesp, dynamic_cast<const Expression&>(stat));
@@ -1239,7 +1442,7 @@ int main(int argc, char** argv) {
     code.push(Instruments::Stack::push); //
     convertInteger(code, Embedded::LocalHeapEnd);
     code.push(Instruments::Stack::push);
-    convertInteger(code, Embedded::GlobalPtr + globalScope.nameTable->heapSize());
+    convertInteger(code, Embedded::GlobalPtr + globalScope.nameTable->localHeapSize());
     code.push(Instruments::Heap::store);
 
 

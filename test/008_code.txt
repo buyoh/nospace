@@ -1,0 +1,8 @@
+func:main(){
+    let:i;
+    i=9;
+    while(x){
+        __puti(x);
+        x=x-1;
+    }
+}

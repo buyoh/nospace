@@ -93,12 +93,25 @@ func:main(){
 }
 ```
 
+### progress 14
+
+use `if` and `while` statement. 0 means false, otherwise means true.
+`if(x-5){__puti(1);}`.
+
+in global scope, you can descript `let`, `func`.
+in func scope, you can descript `let`, expressions.
+in statement scope(`if` `while`), you can descript expressions.
+
 
 ## feature
 
 ### A1
 
 use build-in function `__geti` and `__getc`.
+
+### A2
+
+initialize `let:x(1);`
 
 ### B3
 
