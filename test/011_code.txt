@@ -1,0 +1,18 @@
+func:main(){
+    let:n; let:x;
+    n = __geti();
+    while(n){
+        x = __geti();
+        if (x == 5){
+            __puti(1);
+        }else{
+            __puti(0);
+        }
+        if (x < 5){
+            __puti(1);
+        }else{
+            __puti(0);
+        }
+        n = n-1;
+    }
+}

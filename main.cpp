@@ -208,7 +208,6 @@ namespace Parser {
     }
 
 
-
     TokenInteger parseInteger(istream& is) {
         integer var = 0;
         int cc = is.peek();
@@ -229,7 +228,17 @@ namespace Parser {
 
 
     TokenSymbol parseSymbol(istream& is) {
-        return TokenSymbol(is.get());
+        int c1 = is.get();
+        int c2 = is.peek();
+
+        if (c1 == '=') {
+            if (c2 == '=') {
+                is.get();
+                return TokenSymbol('=', '=');
+            }
+        }
+
+        return TokenSymbol(c1);
     }
 
 
@@ -271,12 +280,16 @@ namespace Compiler {
     namespace Embedded {
         namespace Function {
             const signed IDxyz = -999;
+            
+            // const signed IDaadd = -10;
+            // const signed IDasub = -11;
+            // const signed IDamul = -12;
+            // const signed IDadiv = -13;
+            // const signed IDamod = -14;
 
-            const signed IDaadd = -10;
-            const signed IDasub = -11;
-            const signed IDamul = -12;
-            const signed IDadiv = -13;
-            const signed IDamod = -14;
+            const signed IDequal = -40;
+            const signed IDless = -42;
+            
 
             const signed IDputi = -100;
             const signed IDputc = -101;
@@ -460,7 +473,7 @@ namespace Compiler {
     };
 
 
-    enum struct OperationMode {
+    enum struct OperationMode { // TODO: 演算もCallに統一する
         Value,
         Minus,
         Add,
@@ -768,12 +781,53 @@ namespace Compiler {
         return root;
     }
 
+    // '<'
+    unique_ptr<Expression> getExpressionComp(TokenStream& stream, NameTable& nameTable) {
+        unique_ptr<Expression> root;
+        unique_ptr<Expression>* curr = &root;
+
+        *curr = move(getExpressionPls(stream, nameTable));
+
+        while (!stream.eof()) {
+            const Token& token = stream.peek();
+
+            if (typeis<TokenSymbol>(token)) {
+                const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
+
+                if (tokenSymbol == '<') {
+                    auto new_ex = new Expression(Embedded::Function::IDless);
+                    new_ex->resizeArgs(2);
+                    (*new_ex).args(0) = move(root);
+                    root.reset(new_ex);
+                    curr = &(*new_ex).args(1);
+                    stream.get();
+                }
+                else if (tokenSymbol == "==") {
+                    auto new_ex = new Expression(Embedded::Function::IDequal);
+                    new_ex->resizeArgs(2);
+                    (*new_ex).args(0) = move(root);
+                    root.reset(new_ex);
+                    curr = &(*new_ex).args(1);
+                    stream.get();
+                }
+                else {
+                    break;
+                }
+            }
+            else {
+                throw CompileException();
+            }
+            *curr = move(getExpressionPls(stream, nameTable));
+        }
+        return root;
+    }
+
     // '='
     unique_ptr<Expression> getExpressionAsg(TokenStream& stream, NameTable& nameTable) {
         unique_ptr<Expression> root;
         unique_ptr<Expression>* curr = &root;
 
-        *curr = move(getExpressionPls(stream, nameTable));
+        *curr = move(getExpressionComp(stream, nameTable));
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
@@ -794,7 +848,7 @@ namespace Compiler {
             else {
                 throw CompileException();
             }
-            *curr = move(getExpressionPls(stream, nameTable));
+            *curr = move(getExpressionComp(stream, nameTable));
         }
         return root;
     }
@@ -1100,6 +1154,18 @@ namespace Builder {
         const integer LocalHeapEnd = 3;
         const integer TempPtr = 4;
         const integer GlobalPtr = 8;
+
+        const integer LabelOffset = 8;
+
+        const integer LabelComparatorZero = 2;
+        const integer LabelComparatorZero2 = 3;
+        const integer LabelComparatorNegative = 4;
+        const integer LabelComparatorNegative2 = 5;
+    }
+
+
+    integer solveLabel(integer labelId) { // TODO:
+        return 0;
     }
 
 
@@ -1255,33 +1321,66 @@ namespace Builder {
 
     WhiteSpace& convertEmbeddedExpression(WhiteSpace& whitesp, const Expression& exps) {
 
-        if (exps.id() == Embedded::Function::IDxyz) {
+        switch (exps.id())
+        {
+        case Embedded::Function::IDxyz: {
             whitesp.push(Instruments::Stack::push);
             convertInteger(whitesp, integer(999));
+            return whitesp;
         }
-        else if (exps.id() == Embedded::Function::IDputi) {
+        case Embedded::Function::IDequal: {
+            whitesp.push(Instruments::Stack::push);
+            convertInteger(whitesp, integer(1));
+            whitesp.push(Instruments::Stack::push);
+            convertInteger(whitesp, integer(0));
+
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
+            whitesp.push(Instruments::Arithmetic::sub);
+
+            whitesp.push(Instruments::Flow::call);
+            convertInteger(whitesp, Alignment::LabelComparatorZero);
+            return whitesp;
+        }
+        case Embedded::Function::IDless: {
+            whitesp.push(Instruments::Stack::push);
+            convertInteger(whitesp, integer(0));
+            whitesp.push(Instruments::Stack::push);
+            convertInteger(whitesp, integer(1));
+
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
+            whitesp.push(Instruments::Arithmetic::sub);
+
+            whitesp.push(Instruments::Flow::call);
+            convertInteger(whitesp, Alignment::LabelComparatorNegative);
+            return whitesp;
+        }
+        case (Embedded::Function::IDputi): {
             convertExpression(whitesp, exps[0]);
             whitesp.push(Instruments::Stack::duplicate);
             whitesp.push(Instruments::IO::putnumber);
+            return whitesp;
         }
-        else if (exps.id() == Embedded::Function::IDputc) {
+        case (Embedded::Function::IDputc): {
             convertExpression(whitesp, exps[0]);
             whitesp.push(Instruments::Stack::duplicate);
             whitesp.push(Instruments::IO::putchar);
+            return whitesp;
         }
-        else if (exps.id() == Embedded::Function::IDgeti) {
+        case (Embedded::Function::IDgeti): {
             whitesp.push(Instruments::Stack::push);
             convertInteger(whitesp, Alignment::TempPtr);
             whitesp.push(Instruments::IO::getnumber);
             whitesp.push(Instruments::Stack::push);
             convertInteger(whitesp, Alignment::TempPtr);
             whitesp.push(Instruments::Heap::retrieve);
+            return whitesp;
         }
-        else {
+        default: {
             throw OperatorException();
         }
-
-        return whitesp;
+        }
     }
 
 
@@ -1341,7 +1440,7 @@ namespace Builder {
             }
             else {
                 whitesp.push(Instruments::Flow::call);
-                convertInteger(whitesp, integer(exps.id()));
+                convertInteger(whitesp, integer(exps.id()) + Alignment::LabelOffset);
 
                 convertLocalDeallocate(whitesp);
 
@@ -1376,7 +1475,7 @@ namespace Builder {
 
 
     WhiteSpace& convertFunction(WhiteSpace& whitesp, const StatementFunction& func) {
-        integer label = func.funcLabel;
+        integer label = func.funcLabel + Alignment::LabelOffset;
         // TODO: insert here: goto label+1;
         whitesp.push(Instruments::Flow::label);
         convertInteger(whitesp, label);
@@ -1393,7 +1492,7 @@ namespace Builder {
 
 
     WhiteSpace& convertWhile(WhiteSpace& whitesp, const StatementWhile& whilestat) {
-        integer label = whilestat.label;
+        integer label = whilestat.label + Alignment::LabelOffset;
 
         whitesp.push(Instruments::Flow::label);
         convertInteger(whitesp, label);
@@ -1415,8 +1514,7 @@ namespace Builder {
 
     // elsif, else も処理する
     WhiteSpace& convertIf(WhiteSpace& whitesp, const StatementIf& ifstat) {
-
-        integer label = ifstat.label;
+        integer label = ifstat.label + Alignment::LabelOffset;
 
         whitesp.push(Instruments::Flow::label);
         convertInteger(whitesp, label);
@@ -1431,7 +1529,7 @@ namespace Builder {
 
         if (ifstat.elsif) {
             whitesp.push(Instruments::Flow::jump);
-            convertInteger(whitesp, ifstat.getLabelLast() + 1);
+            convertInteger(whitesp, ifstat.getLabelLast() + 1 + Alignment::LabelOffset);
         }
 
         whitesp.push(Instruments::Flow::label);
@@ -1480,6 +1578,8 @@ int main(int argc, char** argv) {
     reservedNameTable.defineEmbeddedFunction("__putc", Embedded::Function::IDputc, 1);
     reservedNameTable.defineEmbeddedFunction("__geti", Embedded::Function::IDgeti, 0);
 
+    // embedded definition
+
     // analysis
 
     TokenStream tokenStream(parseToTokens(cin));
@@ -1497,6 +1597,8 @@ int main(int argc, char** argv) {
     WhiteSpace code;
 
     // header
+    
+    // initialize memory
 
     code.push(Instruments::Stack::push); //
     convertInteger(code, Alignment::LocalHeapBegin);
@@ -1510,13 +1612,41 @@ int main(int argc, char** argv) {
     convertInteger(code, Alignment::GlobalPtr + globalScope.nameTable->localHeapSize());
     code.push(Instruments::Heap::store);
 
-
+    // call main
     code.push(Instruments::Flow::call);
-    convertInteger(code, mainEntry.address());
+    convertInteger(code, mainEntry.address() + Alignment::LabelOffset);
     code.push(Instruments::Flow::exit);
 
-    // body
+    // embedded utilities
+    //
+    code.push(Instruments::Flow::label);
+    convertInteger(code, Alignment::LabelComparatorZero);
+    code.push(Instruments::Stack::push);
+    convertInteger(code, 1);
+    code.push(Instruments::Stack::swap);
+    code.push(Instruments::Flow::zerojump);
+    convertInteger(code, Alignment::LabelComparatorZero2);
+    code.push(Instruments::Stack::discard);
+    convertInteger(code, 0);
+    code.push(Instruments::Flow::label);
+    convertInteger(code, Alignment::LabelComparatorZero2);
+    code.push(Instruments::Flow::retun);
 
+    code.push(Instruments::Flow::label);
+    convertInteger(code, Alignment::LabelComparatorNegative);
+    code.push(Instruments::Stack::push);
+    convertInteger(code, 1);
+    code.push(Instruments::Stack::swap);
+    code.push(Instruments::Flow::negativejump);
+    convertInteger(code, Alignment::LabelComparatorNegative2);
+    code.push(Instruments::Stack::discard);
+    convertInteger(code, 0);
+    code.push(Instruments::Flow::label);
+    convertInteger(code, Alignment::LabelComparatorNegative2);
+    code.push(Instruments::Flow::retun);
+
+
+    // body
     convertScope(code, globalScope);
 
     // flush
