@@ -281,15 +281,17 @@ namespace Compiler {
         namespace Function {
             const signed IDxyz = -999;
             
-            // const signed IDaadd = -10;
-            // const signed IDasub = -11;
-            // const signed IDamul = -12;
-            // const signed IDadiv = -13;
-            // const signed IDamod = -14;
+            const signed IDaadd = -10;
+            const signed IDasub = -11;
+            const signed IDamul = -12;
+            const signed IDadiv = -13;
+            const signed IDamod = -14;
+            const signed IDaminus = -15; // 単項
 
             const signed IDequal = -40;
             const signed IDless = -42;
-            
+
+            const signed IDassign = -60;
 
             const signed IDputi = -100;
             const signed IDputc = -101;
@@ -475,13 +477,6 @@ namespace Compiler {
 
     enum struct OperationMode { // TODO: 演算もCallに統一する
         Value,
-        Minus,
-        Add,
-        Subtract,
-        Multiply,
-        Divide,
-        Modulo,
-        Assign,
         Call
     };
 
@@ -531,40 +526,15 @@ namespace Compiler {
         unique_ptr<Factor> factor_;
         vector<unique_ptr<Expression>> args_;
 
-        void setup() {
-            switch (mode_) {
-            case OperationMode::Add:
-            case OperationMode::Subtract:
-            case OperationMode::Multiply:
-            case OperationMode::Divide:
-            case OperationMode::Modulo:
-            case OperationMode::Assign:
-                args_.resize(2);
-                break;
-            case OperationMode::Minus:
-                args_.resize(1);
-                break;
-            case OperationMode::Value:
-            case OperationMode::Call:
-                break;
-            }
-        }
     public:
-        Expression(OperationMode _mode)
-            : mode_(_mode) {
-            setup();
-        }
         Expression(integer _funcid) // TODO: FactorCaller&&
             : mode_(OperationMode::Call), funcid_(_funcid) {
-            setup();
         }
         Expression(FactorValue&& _factor)
             : mode_(OperationMode::Value), factor_(new FactorValue(_factor)) {
-            setup();
         }
         Expression(FactorVariable&& _factor)
             : mode_(OperationMode::Value), factor_(new FactorVariable(_factor)) {
-            setup();
         }
 
         inline Factor& factor() const { return *factor_; }
@@ -698,7 +668,8 @@ namespace Compiler {
                     return move(stV);
                 }
                 else {
-                    Expression stOp(OperationMode::Minus);
+                    Expression stOp(Embedded::Function::IDaminus);
+                    stOp.resizeArgs(1);
                     stOp.args(0) = move(stV);
                     return make_unique<Expression>(move(stOp));
                 }
@@ -727,10 +698,11 @@ namespace Compiler {
 
                 if (tokenSymbol == '*' || tokenSymbol == '/' || tokenSymbol == '%') {
                     auto new_ex = new Expression(
-                        tokenSymbol == '/' ? OperationMode::Divide :
-                        tokenSymbol == '%' ? OperationMode::Modulo :
-                        OperationMode::Multiply);
-                    (*new_ex).args(0) = move(root);
+                        tokenSymbol == '/' ? Embedded::Function::IDadiv :
+                        tokenSymbol == '%' ? Embedded::Function::IDamod :
+                        Embedded::Function::IDamul);
+                    new_ex->resizeArgs(2);
+                    new_ex->args(0) = move(root);
                     root.reset(new_ex);
                     curr = &(*new_ex).args(1);
                     stream.get();
@@ -763,8 +735,10 @@ namespace Compiler {
                 if (tokenSymbol == '+' || tokenSymbol == '-') {
 
                     auto new_ex = new Expression(
-                        tokenSymbol == '-' ? OperationMode::Subtract : OperationMode::Add);
-                    (*new_ex).args(0) = move(root);
+                        tokenSymbol == '-' ? Embedded::Function::IDasub :
+                        Embedded::Function::IDaadd);
+                    new_ex->resizeArgs(2);
+                    new_ex->args(0) = move(root);
                     root.reset(new_ex);
                     curr = &(*new_ex).args(1);
                     stream.get();
@@ -835,8 +809,9 @@ namespace Compiler {
                 const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
 
                 if (tokenSymbol == '=') {
-                    auto new_ex = new Expression(OperationMode::Assign);
-                    (*new_ex).args(0) = move(*curr);
+                    auto new_ex = new Expression(Embedded::Function::IDassign);
+                    new_ex->resizeArgs(2);
+                    new_ex->args(0) = move(*curr);
                     curr->reset(new_ex);
                     curr = &(*new_ex).args(1);
                     stream.get();
@@ -1356,19 +1331,68 @@ namespace Builder {
             convertInteger(whitesp, Alignment::LabelComparatorNegative);
             return whitesp;
         }
-        case (Embedded::Function::IDputi): {
+        case Embedded::Function::IDaadd: {
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
+            whitesp.push(Instruments::Arithmetic::add);
+            return whitesp;
+        }
+        case Embedded::Function::IDasub: {
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
+            whitesp.push(Instruments::Arithmetic::sub);
+            return whitesp;
+        }
+        case Embedded::Function::IDamul: {
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
+            whitesp.push(Instruments::Arithmetic::mul);
+            return whitesp;
+        }
+        case Embedded::Function::IDadiv: {
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
+            whitesp.push(Instruments::Arithmetic::div);
+            return whitesp;
+        }
+        case Embedded::Function::IDamod: {
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
+            whitesp.push(Instruments::Arithmetic::mod);
+            return whitesp;
+        }
+        case Embedded::Function::IDaminus: {
+            whitesp.push(Instruments::Stack::push);
+            whitesp.push({ Chr::SP, Chr::LF }); // zero
+            convertExpression(whitesp, exps[0]);
+            whitesp.push(Instruments::Arithmetic::sub);
+            return whitesp;
+        }
+        case Embedded::Function::IDassign: {
+            assert(exps[0].isLvalue());
+            const auto& var = dynamic_cast<const FactorVariable&>(exps[0].factor()); // thrower
+
+            convertCalculateLocalVariablePtr(whitesp, var);
+            convertExpression(whitesp, exps[1]);
+            whitesp.push(Instruments::Heap::store);
+
+            convertCalculateLocalVariablePtr(whitesp, var); // TODO: 
+            whitesp.push(Instruments::Heap::retrieve);
+            return whitesp;
+        }
+        case Embedded::Function::IDputi: {
             convertExpression(whitesp, exps[0]);
             whitesp.push(Instruments::Stack::duplicate);
             whitesp.push(Instruments::IO::putnumber);
             return whitesp;
         }
-        case (Embedded::Function::IDputc): {
+        case Embedded::Function::IDputc: {
             convertExpression(whitesp, exps[0]);
             whitesp.push(Instruments::Stack::duplicate);
             whitesp.push(Instruments::IO::putchar);
             return whitesp;
         }
-        case (Embedded::Function::IDgeti): {
+        case Embedded::Function::IDgeti: {
             whitesp.push(Instruments::Stack::push);
             convertInteger(whitesp, Alignment::TempPtr);
             whitesp.push(Instruments::IO::getnumber);
@@ -1391,49 +1415,6 @@ namespace Builder {
         case OperationMode::Value:
             convertValue(whitesp, exps.factor());
             return whitesp;
-        case OperationMode::Minus:
-            whitesp.push(Instruments::Stack::push);
-            whitesp.push({ Chr::SP, Chr::LF }); // zero
-            convertExpression(whitesp, exps[0]);
-            whitesp.push(Instruments::Arithmetic::sub);
-            return whitesp;
-        case OperationMode::Add:
-            convertExpression(whitesp, exps[0]);
-            convertExpression(whitesp, exps[1]);
-            whitesp.push(Instruments::Arithmetic::add);
-            return whitesp;
-        case OperationMode::Subtract:
-            convertExpression(whitesp, exps[0]);
-            convertExpression(whitesp, exps[1]);
-            whitesp.push(Instruments::Arithmetic::sub);
-            return whitesp;
-        case OperationMode::Multiply:
-            convertExpression(whitesp, exps[0]);
-            convertExpression(whitesp, exps[1]);
-            whitesp.push(Instruments::Arithmetic::mul);
-            return whitesp;
-        case OperationMode::Divide:
-            convertExpression(whitesp, exps[0]);
-            convertExpression(whitesp, exps[1]);
-            whitesp.push(Instruments::Arithmetic::div);
-            return whitesp;
-        case OperationMode::Modulo:
-            convertExpression(whitesp, exps[0]);
-            convertExpression(whitesp, exps[1]);
-            whitesp.push(Instruments::Arithmetic::mod);
-            return whitesp;
-        case OperationMode::Assign: {
-            assert(exps[0].isLvalue());
-            const auto& var = dynamic_cast<const FactorVariable&>(exps[0].factor()); // thrower
-
-            convertCalculateLocalVariablePtr(whitesp, var);
-            convertExpression(whitesp, exps[1]);
-            whitesp.push(Instruments::Heap::store);
-
-            convertCalculateLocalVariablePtr(whitesp, var); // TODO: 
-            whitesp.push(Instruments::Heap::retrieve);
-            return whitesp;
-        }
         case OperationMode::Call: {
             if (exps.id() < 0) {
                 convertEmbeddedExpression(whitesp, exps);
