@@ -475,7 +475,7 @@ namespace Compiler {
     };
 
 
-    enum struct OperationMode { // TODO: 演算もCallに統一する
+    enum struct OperationMode {
         Value,
         Call
     };
@@ -486,8 +486,34 @@ namespace Compiler {
     // }
 
 
-    struct Factor {
-        virtual ~Factor() {}
+    struct Expression : public Statement {
+    };
+
+
+    class Operation : public Expression {
+        integer funcid_;
+        vector<unique_ptr<Expression>> args_;
+    public:
+        Operation(integer _f) :funcid_(_f) { }
+        Operation(integer _f, int _argSize) :funcid_(_f), args_(_argSize){ }
+        //Operation(integer _f, initializer_list<decltype(args_)::value_type> _args)
+        //    :funcid_(_f), args_(_args) { }
+
+        inline integer& id() { return funcid_; }
+        inline integer id() const { return funcid_; }
+
+        inline decltype(args_)::value_type& args(int i) { return args_[i]; }
+        inline const decltype(args_)::value_type& args(int i) const { return args_[i]; }
+
+        inline Expression& operator[](int i) { return *args_[i]; }
+        inline const Expression& operator[](int i) const { return *args_[i]; }
+
+        inline void resizeArgs(int size) { args_.resize(size); }
+    };
+
+
+    struct Factor : public Expression {
+        virtual bool isLValue() const = 0;
     };
 
     class FactorValue : public Factor {
@@ -497,6 +523,8 @@ namespace Compiler {
 
         inline integer& get() { return val_; }
         inline integer get() const { return val_; }
+
+        inline bool isLValue() const override { return false; }
     };
 
     class FactorVariable : public Factor {
@@ -508,53 +536,8 @@ namespace Compiler {
         // inline integer& get() { return addr_; }
         inline integer get() const { return addr_; }
         inline integer scope() const { return scope_; }
-    };
 
-    class FactorCaller : public Factor {
-        integer funcid_;
-    public:
-        FactorCaller(integer _f) :funcid_(_f) { }
-
-        inline integer& get() { return funcid_; }
-        inline integer get() const { return funcid_; }
-    };
-
-
-    class Expression : public Statement {
-        const OperationMode mode_;
-        integer funcid_;
-        unique_ptr<Factor> factor_;
-        vector<unique_ptr<Expression>> args_;
-
-    public:
-        Expression(integer _funcid) // TODO: FactorCaller&&
-            : mode_(OperationMode::Call), funcid_(_funcid) {
-        }
-        Expression(FactorValue&& _factor)
-            : mode_(OperationMode::Value), factor_(new FactorValue(_factor)) {
-        }
-        Expression(FactorVariable&& _factor)
-            : mode_(OperationMode::Value), factor_(new FactorVariable(_factor)) {
-        }
-
-        inline Factor& factor() const { return *factor_; }
-        inline OperationMode mode() const { return mode_; }
-        inline integer id() const { return funcid_; }
-
-        // OperationMode::Value かつ factor が FactorVariable である
-        inline bool isLvalue() const {
-            return mode_ == OperationMode::Value && typeis<FactorVariable>(*factor_);
-        }
-
-        inline decltype(args_)::value_type& args(int i) { return args_[i]; }
-        inline const decltype(args_)::value_type& args(int i) const { return args_[i]; }
-
-        inline Expression& operator[](int i) { return *args_[i]; }
-        inline const Expression& operator[](int i) const { return *args_[i]; }
-
-        inline void resizeArgs(int size) { args_.resize(size); }
-
-
+        inline bool isLValue() const override { return true; }
     };
 
 
@@ -570,7 +553,7 @@ namespace Compiler {
 
             integer val = dynamic_cast<const TokenInteger&>(token).get();
             stream.get();
-            return make_unique<Expression>(FactorValue(val));
+            return make_unique<FactorValue>(val);
         }
         else if (typeis<TokenKeyword>(token)) {
 
@@ -585,8 +568,7 @@ namespace Compiler {
                 }
                 else if (typeis<NameEntryFunction>(entry)) {
                     auto& funcEntry = dynamic_cast<const NameEntryFunction&>(entry);
-                    Expression exps(funcEntry.address());
-                    exps.resizeArgs(funcEntry.argLength());
+                    Operation exps(funcEntry.address(), funcEntry.argLength());
 
                     try {
                         stream.get();
@@ -601,7 +583,7 @@ namespace Compiler {
                     catch (bad_cast) {
                         throw CompileException();
                     }
-                    return make_unique<Expression>(move(exps));
+                    return make_unique<Operation>(move(exps));
                 }
             }
             else {
@@ -620,7 +602,7 @@ namespace Compiler {
 
                     assert(dynamic_cast<const TokenSymbol&>(stream.get()) == '(');
                     assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ')');
-                    return make_unique<Expression>(ref.first.address());
+                    return make_unique<Operation>(ref.first.address());
                 }
                 else {
                     // variable
@@ -630,7 +612,7 @@ namespace Compiler {
                     const auto& ref = nameTable.getEntire(tokenKeyword.to_string());
                     if (!typeis<NameEntryVariable>(ref.first))
                         throw CompileException();
-                    return make_unique<Expression>(FactorVariable(ref.second->isGlobal() ? 0 : 1, ref.first.address()));
+                    return make_unique<FactorVariable>(ref.second->isGlobal() ? 0 : 1, ref.first.address());
                 }
 
             }
@@ -662,16 +644,15 @@ namespace Compiler {
                 stream.get();
                 auto stV = getExpressionUnary(stream, nameTable);
 
-                if (stV->mode() == OperationMode::Value && typeis<FactorValue>(stV->factor())) {
+                if (typeis<FactorValue>(*stV)) {
                     // optimization
-                    dynamic_cast<FactorValue&>(stV->factor()).get() *= -1;
+                    dynamic_cast<FactorValue*>(stV.get())->get() *= -1;
                     return move(stV);
                 }
                 else {
-                    Expression stOp(Embedded::Function::IDaminus);
-                    stOp.resizeArgs(1);
+                    Operation stOp(Embedded::Function::IDaminus, 1);
                     stOp.args(0) = move(stV);
-                    return make_unique<Expression>(move(stOp));
+                    return make_unique<Operation>(move(stOp));
                 }
             }
             else {
@@ -697,11 +678,10 @@ namespace Compiler {
                 const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
 
                 if (tokenSymbol == '*' || tokenSymbol == '/' || tokenSymbol == '%') {
-                    auto new_ex = new Expression(
+                    auto new_ex = new Operation(
                         tokenSymbol == '/' ? Embedded::Function::IDadiv :
                         tokenSymbol == '%' ? Embedded::Function::IDamod :
-                        Embedded::Function::IDamul);
-                    new_ex->resizeArgs(2);
+                        Embedded::Function::IDamul, 2);
                     new_ex->args(0) = move(root);
                     root.reset(new_ex);
                     curr = &(*new_ex).args(1);
@@ -734,10 +714,9 @@ namespace Compiler {
 
                 if (tokenSymbol == '+' || tokenSymbol == '-') {
 
-                    auto new_ex = new Expression(
+                    auto new_ex = new Operation(
                         tokenSymbol == '-' ? Embedded::Function::IDasub :
-                        Embedded::Function::IDaadd);
-                    new_ex->resizeArgs(2);
+                        Embedded::Function::IDaadd, 2);
                     new_ex->args(0) = move(root);
                     root.reset(new_ex);
                     curr = &(*new_ex).args(1);
@@ -769,16 +748,14 @@ namespace Compiler {
                 const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
 
                 if (tokenSymbol == '<') {
-                    auto new_ex = new Expression(Embedded::Function::IDless);
-                    new_ex->resizeArgs(2);
+                    auto new_ex = new Operation(Embedded::Function::IDless, 2);
                     (*new_ex).args(0) = move(root);
                     root.reset(new_ex);
                     curr = &(*new_ex).args(1);
                     stream.get();
                 }
                 else if (tokenSymbol == "==") {
-                    auto new_ex = new Expression(Embedded::Function::IDequal);
-                    new_ex->resizeArgs(2);
+                    auto new_ex = new Operation(Embedded::Function::IDequal, 2);
                     (*new_ex).args(0) = move(root);
                     root.reset(new_ex);
                     curr = &(*new_ex).args(1);
@@ -809,8 +786,7 @@ namespace Compiler {
                 const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
 
                 if (tokenSymbol == '=') {
-                    auto new_ex = new Expression(Embedded::Function::IDassign);
-                    new_ex->resizeArgs(2);
+                    auto new_ex = new Operation(Embedded::Function::IDassign, 2);
                     new_ex->args(0) = move(*curr);
                     curr->reset(new_ex);
                     curr = &(*new_ex).args(1);
@@ -1294,7 +1270,7 @@ namespace Builder {
     }
 
 
-    WhiteSpace& convertEmbeddedExpression(WhiteSpace& whitesp, const Expression& exps) {
+    WhiteSpace& convertEmbeddedExpression(WhiteSpace& whitesp, const Operation& exps) {
 
         switch (exps.id())
         {
@@ -1369,8 +1345,8 @@ namespace Builder {
             return whitesp;
         }
         case Embedded::Function::IDassign: {
-            assert(exps[0].isLvalue());
-            const auto& var = dynamic_cast<const FactorVariable&>(exps[0].factor()); // thrower
+            assert(typeis<FactorVariable>(exps[0]));
+            const auto& var = dynamic_cast<const FactorVariable&>(exps[0]); // thrower
 
             convertCalculateLocalVariablePtr(whitesp, var);
             convertExpression(whitesp, exps[1]);
@@ -1410,18 +1386,16 @@ namespace Builder {
 
     WhiteSpace& convertExpression(WhiteSpace& whitesp, const Expression& exps) {
 
-        switch (exps.mode())
-        {
-        case OperationMode::Value:
-            convertValue(whitesp, exps.factor());
-            return whitesp;
-        case OperationMode::Call: {
-            if (exps.id() < 0) {
-                convertEmbeddedExpression(whitesp, exps);
+        if (typeis<Operation>(exps)) {
+
+            const Operation& op = dynamic_cast<const Operation&>(exps);
+
+            if (op.id() < 0) {
+                convertEmbeddedExpression(whitesp, op);
             }
             else {
                 whitesp.push(Instruments::Flow::call);
-                convertInteger(whitesp, integer(exps.id()) + Alignment::LabelOffset);
+                convertInteger(whitesp, integer(op.id()) + Alignment::LabelOffset);
 
                 convertLocalDeallocate(whitesp);
 
@@ -1430,7 +1404,11 @@ namespace Builder {
             }
             return whitesp;
         }
+        try {
+            convertValue(whitesp, dynamic_cast<const Factor&>(exps));
+            return whitesp;
         }
+        catch(bad_cast){}
 
         throw OperatorException();
     }
@@ -1532,10 +1510,13 @@ namespace Builder {
             return convertIf(whitesp, dynamic_cast<const StatementIf&>(stat));
         if (typeis<StatementWhile>(stat))
             return convertWhile(whitesp, dynamic_cast<const StatementWhile&>(stat));
-        if (typeis<Expression>(stat)) {
+        try {
             convertExpression(whitesp, dynamic_cast<const Expression&>(stat));
             whitesp.push(Instruments::Stack::discard);
             return whitesp;
+        }
+        catch (bad_cast) {
+
         }
 
         throw GenerationException();
