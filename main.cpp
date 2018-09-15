@@ -268,6 +268,26 @@ namespace Compiler {
     using namespace Parser;
 
 
+    namespace Embedded {
+        namespace Function {
+            const signed IDxyz = -999;
+
+            const signed IDaadd = -10;
+            const signed IDasub = -11;
+            const signed IDamul = -12;
+            const signed IDadiv = -13;
+            const signed IDamod = -14;
+
+            const signed IDputi = -100;
+            const signed IDputc = -101;
+            const signed IDgeti = -110;
+            const signed IDgetc = -111;
+
+
+        }
+    }
+
+
     struct CompileException : runtime_error {
         CompileException(const char* msg = "") :runtime_error(msg) { }
     };
@@ -1072,7 +1092,7 @@ namespace Builder {
     using namespace Compiler;
 
 
-    namespace Embedded {
+    namespace Alignment {
         // 諸操作に必要なHeap領域．
         // [0][reserved][localBegin][localEnd][calc][calc][calc][calc]
         const integer ReservedHeapSize = 8;
@@ -1144,15 +1164,15 @@ namespace Builder {
     WhiteSpace& convertLocalAllocate(WhiteSpace& whitesp, const StatementFunction& func) {
         // - local_begin を stack に積む
         whitesp.push(Instruments::Stack::push);
-        convertInteger(whitesp, Embedded::LocalHeapBegin);
+        convertInteger(whitesp, Alignment::LocalHeapBegin);
         whitesp.push(Instruments::Heap::retrieve);
         // - local_begin := local_end．(dup local_end)
         whitesp.push(Instruments::Stack::push);
-        convertInteger(whitesp, Embedded::LocalHeapEnd);
+        convertInteger(whitesp, Alignment::LocalHeapEnd);
         whitesp.push(Instruments::Heap::retrieve);
         whitesp.push(Instruments::Stack::duplicate); // dup!
         whitesp.push(Instruments::Stack::push);
-        convertInteger(whitesp, Embedded::LocalHeapBegin);
+        convertInteger(whitesp, Alignment::LocalHeapBegin);
         whitesp.push(Instruments::Stack::swap);
         whitesp.push(Instruments::Heap::store);
         // remain local_begin value on stack.
@@ -1161,11 +1181,10 @@ namespace Builder {
         convertInteger(whitesp, func.nameTable->localHeapSize());
         whitesp.push(Instruments::Arithmetic::add);
         whitesp.push(Instruments::Stack::push);
-        convertInteger(whitesp, Embedded::LocalHeapEnd);
+        convertInteger(whitesp, Alignment::LocalHeapEnd);
         whitesp.push(Instruments::Stack::swap);
         whitesp.push(Instruments::Heap::store);
         return whitesp;
-
     }
 
 
@@ -1173,10 +1192,10 @@ namespace Builder {
     WhiteSpace& convertLocalDeallocate(WhiteSpace& whitesp) {
         // return するとき，
         // - local_end := local_begin．
-        convertCopy(whitesp, Embedded::LocalHeapEnd, Embedded::LocalHeapBegin);
+        convertCopy(whitesp, Alignment::LocalHeapEnd, Alignment::LocalHeapBegin);
         // - local_begin を stack から取り出す
         whitesp.push(Instruments::Stack::push);
-        convertInteger(whitesp, Embedded::LocalHeapBegin);
+        convertInteger(whitesp, Alignment::LocalHeapBegin);
         whitesp.push(Instruments::Stack::swap);
         whitesp.push(Instruments::Heap::store);
         return whitesp;
@@ -1188,7 +1207,7 @@ namespace Builder {
         convertInteger(whitesp, addr);
 
         whitesp.push(Instruments::Stack::push);
-        convertInteger(whitesp, Embedded::LocalHeapBegin);
+        convertInteger(whitesp, Alignment::LocalHeapBegin);
         whitesp.push(Instruments::Heap::retrieve);
 
         whitesp.push(Instruments::Arithmetic::add);
@@ -1204,13 +1223,16 @@ namespace Builder {
         else {
             // global
             whitesp.push(Instruments::Stack::push);
-            convertInteger(whitesp, var.get() + Embedded::GlobalPtr);
+            convertInteger(whitesp, var.get() + Alignment::GlobalPtr);
             return whitesp;
         }
     }
 
 
     //
+
+
+    WhiteSpace& convertExpression(WhiteSpace&, const Expression&);
 
 
     WhiteSpace& convertValue(WhiteSpace& whitesp, const Factor& factor) {
@@ -1228,6 +1250,38 @@ namespace Builder {
             return whitesp;
         }
         throw OperatorException();
+    }
+
+
+    WhiteSpace& convertEmbeddedExpression(WhiteSpace& whitesp, const Expression& exps) {
+
+        if (exps.id() == Embedded::Function::IDxyz) {
+            whitesp.push(Instruments::Stack::push);
+            convertInteger(whitesp, integer(999));
+        }
+        else if (exps.id() == Embedded::Function::IDputi) {
+            convertExpression(whitesp, exps[0]);
+            whitesp.push(Instruments::Stack::duplicate);
+            whitesp.push(Instruments::IO::putnumber);
+        }
+        else if (exps.id() == Embedded::Function::IDputc) {
+            convertExpression(whitesp, exps[0]);
+            whitesp.push(Instruments::Stack::duplicate);
+            whitesp.push(Instruments::IO::putchar);
+        }
+        else if (exps.id() == Embedded::Function::IDgeti) {
+            whitesp.push(Instruments::Stack::push);
+            convertInteger(whitesp, Alignment::TempPtr);
+            whitesp.push(Instruments::IO::getnumber);
+            whitesp.push(Instruments::Stack::push);
+            convertInteger(whitesp, Alignment::TempPtr);
+            whitesp.push(Instruments::Heap::retrieve);
+        }
+        else {
+            throw OperatorException();
+        }
+
+        return whitesp;
     }
 
 
@@ -1283,31 +1337,7 @@ namespace Builder {
         }
         case OperationMode::Call: {
             if (exps.id() < 0) {
-                if (exps.id() == -99) { // __xyz todo: enum
-                    whitesp.push(Instruments::Stack::push);
-                    convertInteger(whitesp, integer(999));
-                }
-                else if (exps.id() == -10) { // __puti todo: enum
-                    convertExpression(whitesp, exps[0]);
-                    whitesp.push(Instruments::Stack::duplicate);
-                    whitesp.push(Instruments::IO::putnumber);
-                }
-                else if (exps.id() == -11) { // __putc todo: enum
-                    convertExpression(whitesp, exps[0]);
-                    whitesp.push(Instruments::Stack::duplicate);
-                    whitesp.push(Instruments::IO::putchar);
-                }
-                else if (exps.id() == -20) { // __geti todo: enum
-                    whitesp.push(Instruments::Stack::push);
-                    convertInteger(whitesp, Embedded::TempPtr);
-                    whitesp.push(Instruments::IO::getnumber);
-                    whitesp.push(Instruments::Stack::push);
-                    convertInteger(whitesp, Embedded::TempPtr);
-                    whitesp.push(Instruments::Heap::retrieve);
-                }
-                else {
-                    throw OperatorException();
-                }
+                convertEmbeddedExpression(whitesp, exps);
             }
             else {
                 whitesp.push(Instruments::Flow::call);
@@ -1370,14 +1400,14 @@ namespace Builder {
 
         convertExpression(whitesp, *(whilestat.cond));
         whitesp.push(Instruments::Flow::zerojump);
-        convertInteger(whitesp, label+1);
+        convertInteger(whitesp, label + 1);
 
         convertOpenScope(whitesp, whilestat);
 
         whitesp.push(Instruments::Flow::jump); // loop
         convertInteger(whitesp, label);
         whitesp.push(Instruments::Flow::label);
-        convertInteger(whitesp, label+1);
+        convertInteger(whitesp, label + 1);
 
         return whitesp;
     }
@@ -1444,11 +1474,11 @@ int main(int argc, char** argv) {
 
     // embedded definition
 
-    reservedNameTable.defineEmbeddedFunction("__xyz", -99, 0);
+    reservedNameTable.defineEmbeddedFunction("__xyz", Embedded::Function::IDxyz, 0);
 
-    reservedNameTable.defineEmbeddedFunction("__puti", -10, 1);
-    reservedNameTable.defineEmbeddedFunction("__putc", -11, 1);
-    reservedNameTable.defineEmbeddedFunction("__geti", -20, 0);
+    reservedNameTable.defineEmbeddedFunction("__puti", Embedded::Function::IDputi, 1);
+    reservedNameTable.defineEmbeddedFunction("__putc", Embedded::Function::IDputc, 1);
+    reservedNameTable.defineEmbeddedFunction("__geti", Embedded::Function::IDgeti, 0);
 
     // analysis
 
@@ -1469,15 +1499,15 @@ int main(int argc, char** argv) {
     // header
 
     code.push(Instruments::Stack::push); //
-    convertInteger(code, Embedded::LocalHeapBegin);
+    convertInteger(code, Alignment::LocalHeapBegin);
     code.push(Instruments::Stack::push);
-    convertInteger(code, Embedded::GlobalPtr);
+    convertInteger(code, Alignment::GlobalPtr);
     code.push(Instruments::Heap::store);
 
     code.push(Instruments::Stack::push); //
-    convertInteger(code, Embedded::LocalHeapEnd);
+    convertInteger(code, Alignment::LocalHeapEnd);
     code.push(Instruments::Stack::push);
-    convertInteger(code, Embedded::GlobalPtr + globalScope.nameTable->localHeapSize());
+    convertInteger(code, Alignment::GlobalPtr + globalScope.nameTable->localHeapSize());
     code.push(Instruments::Heap::store);
 
 
