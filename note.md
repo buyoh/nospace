@@ -119,6 +119,13 @@ in statement scope(`if` `while`), you can descript expressions.
 operation `<`, `==`. 0 means false, 1 means true.
 
 
+### progress 18
+
+operation `!`, `!=`, `<=`, `>`, `>=`.
+
+- ラベルに関する致命的なバグ複数の修正など
+
+
 ## feature
 
 ### A1

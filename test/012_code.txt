@@ -1,15 +1,24 @@
 let:x;
 
 func:test(){
+    __puti(0);
     if (x == 5){
         __puti(1);
-    }else{
-        __puti(0);
+    }
+    if (x != 5){
+        __puti(2);
     }
     if (x < 5){
-        __puti(1);
-    }else{
-        __puti(0);
+        __puti(3);
+    }
+    if (x <= 5){
+        __puti(4);
+    }
+    if (x > 5){
+        __puti(5);
+    }
+    if (x >= 5){
+        __puti(6);
     }
 }
 

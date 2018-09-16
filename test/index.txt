@@ -10,3 +10,4 @@
 010_code.txt    010_stdin.txt   010_expected.txt
 011_code.txt    011_stdin.txt   011_expected.txt
 yukicoder646_1_code.txt yukicoder646_1_stdin.txt yukicoder646_1_expected.txt
+012_code.txt 012_stdin.txt 012_expected.txt

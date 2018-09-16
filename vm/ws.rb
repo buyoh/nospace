@@ -1,5 +1,4 @@
 require 'stringio'
-require 'scanf'
 
 module WhitespaceCompiler
     
@@ -219,7 +218,7 @@ class WhitespaceInterpreter
         flw_jump(label) if @stack.pop() < 0
     end
     def flw_ret(_)
-        raise WhitespaceRuntimeError.new(self) if @stack.size < 1
+        raise WhitespaceRuntimeError.new(self) if @callstack.size < 1
         @pc = @callstack.pop
     end
     def flw_exit(_)

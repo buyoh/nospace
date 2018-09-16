@@ -232,10 +232,16 @@ namespace Parser {
         int c2 = is.peek();
 
         if (c1 == '=') {
-            if (c2 == '=') {
-                is.get();
-                return TokenSymbol('=', '=');
-            }
+            if (c2 == '=') { is.get(); return TokenSymbol('=', '='); }
+        }
+        if (c1 == '!') {
+            if (c2 == '=') { is.get(); return TokenSymbol('!', '='); }
+        }
+        if (c1 == '<') {
+            if (c2 == '=') { is.get(); return TokenSymbol('<', '='); }
+        }
+        if (c1 == '>') {
+            if (c2 == '=') { is.get(); return TokenSymbol('>', '='); }
         }
 
         return TokenSymbol(c1);
@@ -288,8 +294,13 @@ namespace Compiler {
             const signed IDamod = -14;
             const signed IDaminus = -15; // 単項
 
-            const signed IDequal = -40;
-            const signed IDless = -42;
+            const signed IDequal     = -40;
+            const signed IDnotequal  = -41;
+            const signed IDless      = -42;
+            const signed IDlesseq    = -43;
+            const signed IDgreater   = -44;
+            const signed IDgreatereq = -45;
+            const signed IDnot       = -46;
 
             const signed IDassign = -60;
 
@@ -372,7 +383,7 @@ namespace Compiler {
         NameTable()
             :entries_(), parent_(), addrH_(0), addrL_(0) { }
         NameTable(shared_ptr<NameTable>& _parent)
-            :entries_(), parent_(_parent), addrH_(0), addrL_(0) { }
+            :entries_(), parent_(_parent), addrH_(0), addrL_(_parent->addrL_) { }
 
         const NameEntry& trymakeVariableAddr(const string& name, int length) {
             auto& p = entries_[name];
@@ -402,7 +413,13 @@ namespace Compiler {
 
         // 無名スコープのジャンプ(ifなど)に必要なラベルを確保する．
         inline integer reserveLabelAddr(int size) {
-            return addrL_ += size;
+            integer a = addrL_; addrL_ += size;
+            return a;
+        }
+
+        // ラベルIDをtableと同じ進捗にする．ローカルで使用した分進めるために使う．
+        inline void seekLabelAddr(const NameTable& table) {
+            addrL_ = table.addrL_;
         }
 
         inline integer localHeapSize() const { return addrH_; }
@@ -747,19 +764,37 @@ namespace Compiler {
             if (typeis<TokenSymbol>(token)) {
                 const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
 
-                if (tokenSymbol == '<') {
-                    auto new_ex = new Operation(Embedded::Function::IDless, 2);
+                // 左結合
+                auto commonProcedure = [&](Operation* new_ex) {
                     (*new_ex).args(0) = move(root);
                     root.reset(new_ex);
                     curr = &(*new_ex).args(1);
                     stream.get();
-                }
-                else if (tokenSymbol == "==") {
+                };
+
+                if (tokenSymbol == "==") {
                     auto new_ex = new Operation(Embedded::Function::IDequal, 2);
-                    (*new_ex).args(0) = move(root);
-                    root.reset(new_ex);
-                    curr = &(*new_ex).args(1);
-                    stream.get();
+                    commonProcedure(new_ex);
+                }
+                else if (tokenSymbol == "!=") {
+                    auto new_ex = new Operation(Embedded::Function::IDnotequal, 2);
+                    commonProcedure(new_ex);
+                }
+                else if (tokenSymbol == '<') {
+                    auto new_ex = new Operation(Embedded::Function::IDless, 2);
+                    commonProcedure(new_ex);
+                }
+                else if (tokenSymbol == "<=") {
+                    auto new_ex = new Operation(Embedded::Function::IDlesseq, 2);
+                    commonProcedure(new_ex);
+                }
+                else if (tokenSymbol == '>') {
+                    auto new_ex = new Operation(Embedded::Function::IDgreater, 2);
+                    commonProcedure(new_ex);
+                }
+                else if (tokenSymbol == ">=") {
+                    auto new_ex = new Operation(Embedded::Function::IDgreatereq, 2);
+                    commonProcedure(new_ex);
                 }
                 else {
                     break;
@@ -909,6 +944,8 @@ namespace Compiler {
             localScope->statements.push_back(getStatement(stream, localScope->nameTable, globalScope, !globalScope, false));
             if (!localScope->statements.back()) localScope->statements.pop_back();
         }
+        if (!globalScope)
+            parentNameTable->seekLabelAddr(localScope->nameTable);
         return localScope;
     }
 
@@ -1115,8 +1152,8 @@ namespace Builder {
     }
 
 
-    integer solveLabel(integer labelId) { // TODO:
-        return 0;
+    inline integer solveLabel(integer labelId) {
+        return labelId + Alignment::LabelOffset;
     }
 
 
@@ -1281,10 +1318,22 @@ namespace Builder {
         }
         case Embedded::Function::IDequal: {
             whitesp.push(Instruments::Stack::push);
-            convertInteger(whitesp, integer(1));
+            convertInteger(whitesp, integer(1)); // zero
             whitesp.push(Instruments::Stack::push);
-            convertInteger(whitesp, integer(0));
+            convertInteger(whitesp, integer(0)); // notzero
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
+            whitesp.push(Instruments::Arithmetic::sub);
 
+            whitesp.push(Instruments::Flow::call);
+            convertInteger(whitesp, Alignment::LabelComparatorZero);
+            return whitesp;
+        }
+        case Embedded::Function::IDnotequal: {
+            whitesp.push(Instruments::Stack::push);
+            convertInteger(whitesp, integer(0)); // zero
+            whitesp.push(Instruments::Stack::push);
+            convertInteger(whitesp, integer(1)); // notzero
             convertExpression(whitesp, exps[0]);
             convertExpression(whitesp, exps[1]);
             whitesp.push(Instruments::Arithmetic::sub);
@@ -1295,12 +1344,52 @@ namespace Builder {
         }
         case Embedded::Function::IDless: {
             whitesp.push(Instruments::Stack::push);
-            convertInteger(whitesp, integer(0));
+            convertInteger(whitesp, integer(1)); // neg
             whitesp.push(Instruments::Stack::push);
-            convertInteger(whitesp, integer(1));
-
+            convertInteger(whitesp, integer(0)); // notneg
             convertExpression(whitesp, exps[0]);
             convertExpression(whitesp, exps[1]);
+            whitesp.push(Instruments::Arithmetic::sub);
+
+            whitesp.push(Instruments::Flow::call);
+            convertInteger(whitesp, Alignment::LabelComparatorNegative);
+            return whitesp;
+        }
+        case Embedded::Function::IDgreatereq: {
+            whitesp.push(Instruments::Stack::push);
+            convertInteger(whitesp, integer(0)); // neg
+            whitesp.push(Instruments::Stack::push);
+            convertInteger(whitesp, integer(1)); // notneg
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
+            whitesp.push(Instruments::Arithmetic::sub);
+
+            whitesp.push(Instruments::Flow::call);
+            convertInteger(whitesp, Alignment::LabelComparatorNegative);
+            return whitesp;
+        }
+        case Embedded::Function::IDgreater: {
+            whitesp.push(Instruments::Stack::push);
+            convertInteger(whitesp, integer(1)); // neg
+            whitesp.push(Instruments::Stack::push);
+            convertInteger(whitesp, integer(0)); // notneg
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
+            whitesp.push(Instruments::Stack::swap);
+            whitesp.push(Instruments::Arithmetic::sub);
+
+            whitesp.push(Instruments::Flow::call);
+            convertInteger(whitesp, Alignment::LabelComparatorNegative);
+            return whitesp;
+        }
+        case Embedded::Function::IDlesseq: {
+            whitesp.push(Instruments::Stack::push);
+            convertInteger(whitesp, integer(0)); // neg
+            whitesp.push(Instruments::Stack::push);
+            convertInteger(whitesp, integer(1)); // notneg
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
+            whitesp.push(Instruments::Stack::swap);
             whitesp.push(Instruments::Arithmetic::sub);
 
             whitesp.push(Instruments::Flow::call);
@@ -1395,7 +1484,7 @@ namespace Builder {
             }
             else {
                 whitesp.push(Instruments::Flow::call);
-                convertInteger(whitesp, integer(op.id()) + Alignment::LabelOffset);
+                convertInteger(whitesp, solveLabel(op.id()));
 
                 convertLocalDeallocate(whitesp);
 
@@ -1434,7 +1523,7 @@ namespace Builder {
 
 
     WhiteSpace& convertFunction(WhiteSpace& whitesp, const StatementFunction& func) {
-        integer label = func.funcLabel + Alignment::LabelOffset;
+        integer label = solveLabel(func.funcLabel);
         // TODO: insert here: goto label+1;
         whitesp.push(Instruments::Flow::label);
         convertInteger(whitesp, label);
@@ -1451,7 +1540,7 @@ namespace Builder {
 
 
     WhiteSpace& convertWhile(WhiteSpace& whitesp, const StatementWhile& whilestat) {
-        integer label = whilestat.label + Alignment::LabelOffset;
+        integer label = solveLabel(whilestat.label);
 
         whitesp.push(Instruments::Flow::label);
         convertInteger(whitesp, label);
@@ -1473,7 +1562,7 @@ namespace Builder {
 
     // elsif, else も処理する
     WhiteSpace& convertIf(WhiteSpace& whitesp, const StatementIf& ifstat) {
-        integer label = ifstat.label + Alignment::LabelOffset;
+        integer label = solveLabel(ifstat.label);
 
         whitesp.push(Instruments::Flow::label);
         convertInteger(whitesp, label);
@@ -1488,7 +1577,7 @@ namespace Builder {
 
         if (ifstat.elsif) {
             whitesp.push(Instruments::Flow::jump);
-            convertInteger(whitesp, ifstat.getLabelLast() + 1 + Alignment::LabelOffset);
+            convertInteger(whitesp, solveLabel(ifstat.getLabelLast()) + 1);
         }
 
         whitesp.push(Instruments::Flow::label);
@@ -1576,35 +1665,31 @@ int main(int argc, char** argv) {
 
     // call main
     code.push(Instruments::Flow::call);
-    convertInteger(code, mainEntry.address() + Alignment::LabelOffset);
+    convertInteger(code, solveLabel(mainEntry.address()));
     code.push(Instruments::Flow::exit);
 
     // embedded utilities
-    //
+
+    // [jumped][unjumped][value] zerojump
     code.push(Instruments::Flow::label);
     convertInteger(code, Alignment::LabelComparatorZero);
-    code.push(Instruments::Stack::push);
-    convertInteger(code, 1);
-    code.push(Instruments::Stack::swap);
     code.push(Instruments::Flow::zerojump);
     convertInteger(code, Alignment::LabelComparatorZero2);
-    code.push(Instruments::Stack::discard);
-    convertInteger(code, 0);
+    code.push(Instruments::Stack::swap);
     code.push(Instruments::Flow::label);
     convertInteger(code, Alignment::LabelComparatorZero2);
+    code.push(Instruments::Stack::discard);
     code.push(Instruments::Flow::retun);
 
+    // [jumped][unjumped][value] negativejump
     code.push(Instruments::Flow::label);
     convertInteger(code, Alignment::LabelComparatorNegative);
-    code.push(Instruments::Stack::push);
-    convertInteger(code, 1);
-    code.push(Instruments::Stack::swap);
     code.push(Instruments::Flow::negativejump);
     convertInteger(code, Alignment::LabelComparatorNegative2);
-    code.push(Instruments::Stack::discard);
-    convertInteger(code, 0);
+    code.push(Instruments::Stack::swap);
     code.push(Instruments::Flow::label);
     convertInteger(code, Alignment::LabelComparatorNegative2);
+    code.push(Instruments::Stack::discard);
     code.push(Instruments::Flow::retun);
 
 
