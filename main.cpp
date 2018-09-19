@@ -1209,9 +1209,17 @@ namespace Builder {
             whitesp.push(Chr::SP);
 
         }
-        uint64_t uval = val;
-        for (int i = 62; 0 <= i; --i)
-            whitesp.push((uval & (1ull << i)) >> i);
+        uint64_t uval = val, rev = 0;
+        int len = 0;
+        while (uval) {
+            rev = (rev << 1) | (uval & 1);
+            uval >>= 1;
+            ++len;
+        }
+        while (len--) {
+            whitesp.push(rev & 1);
+            rev >>= 1;
+        }
 
         whitesp.push(Chr::LF);
         return whitesp;
