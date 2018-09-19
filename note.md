@@ -126,6 +126,12 @@ operation `!`, `!=`, `<=`, `>`, `>=`.
 - ラベルに関する致命的なバグ複数の修正など
 
 
+### progress 19
+
+reference, dereference. `&var`, `*var`.
+
+
+
 ## feature
 
 ### A1

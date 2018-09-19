@@ -1,0 +1,17 @@
+
+let: p;
+
+func:f(){
+    __puti(*p);
+    *p = 2;
+    __puti(*p);
+}
+
+func:main(){
+    let: x;
+    x = 1;
+    p = &x;
+    __puti(x);
+    f();
+    __puti(x);
+}

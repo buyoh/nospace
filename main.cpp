@@ -6,11 +6,11 @@ using namespace std;
 using integer = int64_t;
 
 
-template<typename T, typename U>
-inline bool typeis(const U& a1) {
-    return typeid(a1) == typeid(T);
+template<typename Derived, typename Base,
+    typename enable_if<is_base_of<Base, Derived>::value>::type* = nullptr>
+    inline bool typeis(Base& a1) {
+    return typeid(a1) == typeid(Derived);
 }
-
 
 // todo: assert を throw に書き換える
 
@@ -286,7 +286,7 @@ namespace Compiler {
     namespace Embedded {
         namespace Function {
             const signed IDxyz = -999;
-            
+
             const signed IDaadd = -10;
             const signed IDasub = -11;
             const signed IDamul = -12;
@@ -294,15 +294,16 @@ namespace Compiler {
             const signed IDamod = -14;
             const signed IDaminus = -15; // 単項
 
-            const signed IDequal     = -40;
-            const signed IDnotequal  = -41;
-            const signed IDless      = -42;
-            const signed IDlesseq    = -43;
-            const signed IDgreater   = -44;
+            const signed IDequal = -40;
+            const signed IDnotequal = -41;
+            const signed IDless = -42;
+            const signed IDlesseq = -43;
+            const signed IDgreater = -44;
             const signed IDgreatereq = -45;
-            const signed IDnot       = -46;
+            const signed IDnot = -46;
 
             const signed IDassign = -60;
+            const signed IDdereference = -65;
 
             const signed IDputi = -100;
             const signed IDputc = -101;
@@ -512,7 +513,7 @@ namespace Compiler {
         vector<unique_ptr<Expression>> args_;
     public:
         Operation(integer _f) :funcid_(_f) { }
-        Operation(integer _f, int _argSize) :funcid_(_f), args_(_argSize){ }
+        Operation(integer _f, int _argSize) :funcid_(_f), args_(_argSize) { }
         //Operation(integer _f, initializer_list<decltype(args_)::value_type> _args)
         //    :funcid_(_f), args_(_args) { }
 
@@ -555,6 +556,13 @@ namespace Compiler {
         inline integer scope() const { return scope_; }
 
         inline bool isLValue() const override { return true; }
+    };
+
+    class FactorAddress : public FactorVariable {
+    public:
+        FactorAddress(integer _scope, integer _addr) :FactorVariable(_scope, _addr) { }
+        FactorAddress(const FactorVariable& _var) :FactorVariable(_var) { }
+        FactorAddress(FactorVariable&& _var) :FactorVariable(move(_var)) { }
     };
 
 
@@ -644,6 +652,17 @@ namespace Compiler {
                 if (stream.get() == ")") return move(exps);
                 throw CompileException();
             }
+            else if (tokenSymbol == '&') {
+                stream.get();
+                auto stV = getExpressionVal(stream, nameTable);
+
+                if (typeis<FactorVariable>(*stV)) {
+                    return make_unique<FactorAddress>(*dynamic_cast<FactorVariable*>(stV.get()));
+                }
+                else {
+                    throw CompileException();
+                }
+            }
 
         }
         throw CompileException();
@@ -671,6 +690,12 @@ namespace Compiler {
                     stOp.args(0) = move(stV);
                     return make_unique<Operation>(move(stOp));
                 }
+            }
+            else if (tokenSymbol == '*') {
+                stream.get();
+                Operation stOp(Embedded::Function::IDdereference, 1);
+                stOp.args(0) = getExpressionUnary(stream, nameTable);
+                return make_unique<Operation>(move(stOp));
             }
             else {
                 return getExpressionVal(stream, nameTable);
@@ -1303,6 +1328,12 @@ namespace Builder {
             whitesp.push(Instruments::Heap::retrieve);
             return whitesp;
         }
+        else if (typeis<FactorAddress>(factor)) {
+            const auto& var = dynamic_cast<const FactorAddress&>(factor);
+            // calculate addr
+            convertCalculateLocalVariablePtr(whitesp, var);
+            return whitesp;
+        }
         throw OperatorException();
     }
 
@@ -1434,14 +1465,32 @@ namespace Builder {
             return whitesp;
         }
         case Embedded::Function::IDassign: {
-            assert(typeis<FactorVariable>(exps[0]));
-            const auto& var = dynamic_cast<const FactorVariable&>(exps[0]); // thrower
+            if (typeis<FactorVariable>(exps[0])) {
+                const FactorVariable& var = dynamic_cast<const FactorVariable&>(exps[0]);
+                convertCalculateLocalVariablePtr(whitesp, var);
 
-            convertCalculateLocalVariablePtr(whitesp, var);
-            convertExpression(whitesp, exps[1]);
-            whitesp.push(Instruments::Heap::store);
+                whitesp.push(Instruments::Stack::duplicate);
+                convertExpression(whitesp, exps[1]);
+                whitesp.push(Instruments::Heap::store);
+            }
+            else if (typeis<Operation>(exps[0])) {
+                const auto& dref = dynamic_cast<const Operation&>(exps[0]);
+                assert(dref.id() == Embedded::Function::IDdereference);
+                convertExpression(whitesp, dref[0]);
 
-            convertCalculateLocalVariablePtr(whitesp, var); // TODO: 
+                whitesp.push(Instruments::Stack::duplicate);
+                convertExpression(whitesp, exps[1]);
+                whitesp.push(Instruments::Heap::store);
+            }
+            else {
+                throw OperatorException();
+            }
+
+            whitesp.push(Instruments::Heap::retrieve);
+            return whitesp;
+        }
+        case Embedded::Function::IDdereference: {
+            convertExpression(whitesp, exps[0]);
             whitesp.push(Instruments::Heap::retrieve);
             return whitesp;
         }
@@ -1497,7 +1546,7 @@ namespace Builder {
             convertValue(whitesp, dynamic_cast<const Factor&>(exps));
             return whitesp;
         }
-        catch(bad_cast){}
+        catch (bad_cast) {}
 
         throw OperatorException();
     }
@@ -1648,7 +1697,7 @@ int main(int argc, char** argv) {
     WhiteSpace code;
 
     // header
-    
+
     // initialize memory
 
     code.push(Instruments::Stack::push); //
