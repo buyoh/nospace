@@ -376,6 +376,7 @@ namespace Compiler {
 
             const signed IDassign = -60;
             const signed IDdereference = -65;
+            const signed IDindexer = -70;
 
             const signed IDputi = -100;
             const signed IDputc = -101;
@@ -766,6 +767,7 @@ namespace Compiler {
     }
 
     // '-'
+    // TODO: 優先順位．`-*p[1]`は`(-*p)[1]`．`-((*p)[1])`にするには，getExpressionIndexerの前後に分割する必要がある．
     unique_ptr<Expression> getExpressionUnary(TokenStream& stream, NameTable& nameTable) {
 
         const Token& token = stream.peek();
@@ -803,12 +805,53 @@ namespace Compiler {
         }
     }
 
+    // a[1]
+    unique_ptr<Expression> getExpressionIndexer(TokenStream& stream, NameTable& nameTable) {
+
+        auto stV = getExpressionUnary(stream, nameTable);
+
+        const Token& token = stream.peek();
+
+        if (token == "[") {
+            // a[1] => op(&a, 1)
+
+            stream.get();
+            auto index = getExpression(stream, nameTable);
+            assert(stream.get() == "]");
+
+            if (typeis<FactorVariable>(*stV)) {
+                // variable
+                auto stOp = make_unique<Operation>(Embedded::Function::IDindexer, 2);
+                stOp->args(0) = make_unique<FactorAddress>(*dynamic_cast<FactorVariable*>(stV.get()));
+                stOp->args(1) = move(index);
+                return stOp;
+            }
+            else if (typeis<Operation>(*stV)) {
+                // derefference
+                auto& o = dynamic_cast<Operation&>(*stV);
+                assert(o.id() == Embedded::Function::IDdereference);
+                auto stOp = make_unique<Operation>(Embedded::Function::IDindexer, 2);
+                stOp->args(0) = move(o.args(0));
+                stOp->args(1) = move(index);
+                return stOp;
+            }
+            else {
+                Operation stOp(Embedded::Function::IDaminus, 1);
+                stOp.args(0) = move(stV);
+                return make_unique<Operation>(move(stOp));
+            }
+        }
+        else {
+            return stV;
+        }
+    }
+
     // '*'
     unique_ptr<Expression> getExpressionMul(TokenStream& stream, NameTable& nameTable) {
         unique_ptr<Expression> root;
         unique_ptr<Expression>* curr = &root;
 
-        *curr = move(getExpressionUnary(stream, nameTable));
+        *curr = move(getExpressionIndexer(stream, nameTable));
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
@@ -833,7 +876,7 @@ namespace Compiler {
             else {
                 throw CompileException();
             }
-            *curr = move(getExpressionUnary(stream, nameTable));
+            *curr = move(getExpressionIndexer(stream, nameTable));
         }
         return root;
     }
@@ -1117,7 +1160,15 @@ namespace Compiler {
             reservedNameTable.include(varName.to_string())) {
             throw CompileException();
         }
-        nameTable->trymakeVariableAddr(varName.to_string(), 1);
+        int length = 1;
+        if (stream.peek() == "[") {
+            stream.get();
+            auto expr = getExpression(stream, *nameTable);
+            assert(typeis<FactorValue>(*expr));
+            length = dynamic_cast<const FactorValue&>(*expr).get();
+            assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ']');
+        }
+        nameTable->trymakeVariableAddr(varName.to_string(), length);
         assert(stream.get() == ";");
         return unique_ptr<Statement>(); // empty
     }
@@ -1601,29 +1652,39 @@ namespace Builder {
             if (typeis<FactorVariable>(exps[0])) {
                 const FactorVariable& var = dynamic_cast<const FactorVariable&>(exps[0]);
                 convertCalculateLocalVariablePtr(whitesp, var);
-
-                whitesp.push(Instruments::Stack::duplicate);
-                convertExpression(whitesp, exps[1]);
-                whitesp.push(Instruments::Heap::store);
             }
             else if (typeis<Operation>(exps[0])) {
                 const auto& dref = dynamic_cast<const Operation&>(exps[0]);
-                assert(dref.id() == Embedded::Function::IDdereference);
-                convertExpression(whitesp, dref[0]);
-
-                whitesp.push(Instruments::Stack::duplicate);
-                convertExpression(whitesp, exps[1]);
-                whitesp.push(Instruments::Heap::store);
+                if (dref.id() == Embedded::Function::IDdereference) {
+                    convertExpression(whitesp, dref[0]);
+                }
+                else if (dref.id() == Embedded::Function::IDindexer) {
+                    convertExpression(whitesp, dref[0]);
+                    convertExpression(whitesp, dref[1]);
+                    whitesp.push(Instruments::Arithmetic::add);
+                }
             }
             else {
                 throw OperatorException();
             }
+
+            whitesp.push(Instruments::Stack::duplicate);
+            convertExpression(whitesp, exps[1]);
+            whitesp.push(Instruments::Heap::store);
 
             whitesp.push(Instruments::Heap::retrieve);
             return whitesp;
         }
         case Embedded::Function::IDdereference: {
             convertExpression(whitesp, exps[0]);
+            whitesp.push(Instruments::Heap::retrieve);
+            return whitesp;
+        }
+        case Embedded::Function::IDindexer: {
+            // add + dereference
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
+            whitesp.push(Instruments::Arithmetic::add);
             whitesp.push(Instruments::Heap::retrieve);
             return whitesp;
         }

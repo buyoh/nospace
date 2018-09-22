@@ -155,17 +155,22 @@ char literal `'a'` as integer. escape `\n`(LF), `\t`(TAB), `\s`(SPACE), `\'`, `\
 remove `__xyz()`
 
 
-## feature
-
-### progress x24
+### progress 24
 
 use array.`let:x[5];`. `x` means `x[0]`.
+`(*p)[2]`.
+
+invalid `*(&a[1]) = 1`. (特に必要ないかな)
+
+
+
+## feature
 
 
 ### progress x25
 
 initialize.
-`let:a,b,c;`
+`let:a,b,c[3];`
 `let:a(1);`
 `let:x(1,2,3,4,5);` as array.
 
