@@ -449,7 +449,7 @@ namespace Compiler {
             }
             else {
                 p.reset(new NameEntryFunction(name, addrL_, argLen));
-                addrL_ += 2; // TODO: beginとend
+                addrL_ += 2; // memo: beginとend
             }
             return *p;
         }
@@ -1267,9 +1267,6 @@ namespace Builder {
     }
 
 
-    // class CodeBuilder{}; // TODO:
-
-
     struct OperatorException : runtime_error {
         OperatorException(const char* msg = "") :runtime_error(msg) { }
     };
@@ -1640,7 +1637,10 @@ namespace Builder {
 
     WhiteSpace& convertFunction(WhiteSpace& whitesp, const StatementFunction& func) {
         integer label = solveLabel(func.funcLabel);
-        // TODO: insert here: goto label+1;
+        
+        whitesp.push(Instruments::Flow::jump);
+        pushInteger(whitesp, label+1);
+
         whitesp.push(Instruments::Flow::label);
         pushInteger(whitesp, label);
 
@@ -1652,9 +1652,26 @@ namespace Builder {
             pushInteger(whitesp, Alignment::TempPtr);
             whitesp.push(Instruments::Stack::swap);
             whitesp.push(Instruments::Heap::store);
-            // args
-            for (int i = int(func.argAddrs.size()) - 1; 0 <= i; --i) {
-                convertCalculateLocalVariablePtr(whitesp, func.argAddrs[i]); // TODO: 差分を使って出力コード最適化出来る
+
+            // args(差分を使って出力コード最適化)
+            int bk = int(func.argAddrs.size()) - 1;
+            // アドレス基準値をTEMP1に保存
+            whitesp.push(Instruments::Stack::push);
+            pushInteger(whitesp, Alignment::TempPtr + 1);
+            convertCalculateLocalVariablePtr(whitesp, func.argAddrs[bk]);
+            whitesp.push(Instruments::Heap::store);
+            for (int i = bk; 0 <= i; --i) {
+                // アドレス基準値を取り出す
+                whitesp.push(Instruments::Stack::push);
+                pushInteger(whitesp, Alignment::TempPtr + 1);
+                whitesp.push(Instruments::Heap::retrieve);
+                // 本来求めたいconvertCalculateLocalVariablePtr(whitesp, func.argAddrs[i]); を計算
+                if (func.argAddrs[i] != func.argAddrs[bk]) {
+                    whitesp.push(Instruments::Stack::push);
+                    pushInteger(whitesp, func.argAddrs[i] - func.argAddrs[bk]);
+                    whitesp.push(Instruments::Arithmetic::add);
+                }
+                // 引数値を変数にセット
                 whitesp.push(Instruments::Stack::swap);
                 whitesp.push(Instruments::Heap::store);
             }
