@@ -276,12 +276,25 @@ namespace Parser {
     }
 
 
+    void parseLineCommentOut(istream& is) {
+        while (!is.eof()) {
+            int cc = is.get();
+            if (cc == '\r' || cc == '\n') break;
+        }
+    }
+
+
     vector<unique_ptr<Token>> parseToTokens(istream& is) {
         vector<unique_ptr<Token>> tokens;
         tokens.reserve(24);
 
         while (!is.eof()) {
             int cc = is.peek();
+
+            if (cc == '#') {
+                parseLineCommentOut(is);
+                continue;
+            }
 
             if (isspace(cc)) {
                 is.get();

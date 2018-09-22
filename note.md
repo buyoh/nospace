@@ -141,6 +141,12 @@ function arguments. `func:foo(a1,a2,a3){}`.
 return value. `func:succ(a){return:a+1;}`.
 
 
+### progress 22
+
+comment out. `# comment`
+
+
+
 ## feature
 
 ### A1
