@@ -19,7 +19,7 @@ open('./test/index.txt', 'r') do |io|
         puts "test: #{code_name}"
         compile('./test/'+code_name, './temp/out.ws')
         vm_exec('./temp/out.ws', './test/'+stdin_name)
-        abort "failed: runtime error" unless $? == 0
+        abort "failed: runtime error(#{$?})" unless $? == 0
         exp = IO.read('./test/'+exp_name)
         act = IO.read('./temp/runstdout.log')
         unless exp == act

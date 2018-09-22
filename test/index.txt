@@ -12,3 +12,5 @@
 yukicoder646_1_code.txt yukicoder646_1_stdin.txt yukicoder646_1_expected.txt
 012_code.txt 012_stdin.txt 012_expected.txt
 013_code.txt empty.txt 013_expected.txt
+014_code.txt 014_stdin.txt 014_expected.txt
+015_code.txt 015_stdin.txt 015_expected.txt

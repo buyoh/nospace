@@ -1,0 +1,18 @@
+
+func:fibo(x, ret){
+    let:r1;let:r2;
+    if (x <= 1) {
+        *ret = 1;
+    }
+    else {
+        fibo(x-1, &r1);
+        fibo(x-2, &r2);
+        *ret = r1 + r2;
+    }
+}
+
+func:main(){
+    let:r;
+    fibo(6, &r);
+    __puti(r);
+}

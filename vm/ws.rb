@@ -153,6 +153,8 @@ class WhitespaceInterpreter
         unless 0 <= @pc && @pc < @code.size
             raise WhitespaceRuntimeError.new(self)
         end
+        #p [@code[@pc], @code[@pc+1], @stack, @callstack]
+        #abort if @callstack.size >= 4
         self.send(@code[@pc], @code[@pc+1])
         @pc += 1
         true

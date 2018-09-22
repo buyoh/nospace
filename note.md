@@ -131,6 +131,10 @@ operation `!`, `!=`, `<=`, `>`, `>=`.
 reference, dereference. `&var`, `*var`.
 
 
+### progress 20
+
+function arguments. `func:foo(a1,a2,a3){}`.
+
 
 ## feature
 
