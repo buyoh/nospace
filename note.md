@@ -136,6 +136,11 @@ reference, dereference. `&var`, `*var`.
 function arguments. `func:foo(a1,a2,a3){}`.
 
 
+### progress 21
+
+return value. `func:succ(a){return:a+1;}`.
+
+
 ## feature
 
 ### A1

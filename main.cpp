@@ -992,6 +992,13 @@ namespace Compiler {
     };
 
 
+    struct StatementReturn : public Statement {
+        unique_ptr<Expression> retVal;
+        StatementReturn(unique_ptr<Expression>&& _retVal) :retVal(move(_retVal)) { }
+        StatementReturn() { }
+    };
+
+
     //
 
 
@@ -1189,6 +1196,26 @@ namespace Compiler {
     }
 
 
+    unique_ptr<StatementReturn> getStatementReturn(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
+        assert(dynamic_cast<const TokenKeyword&>(stream.get()) == "return");
+
+        assert(typeis<TokenSymbol>(stream.peek()));
+        auto& token = dynamic_cast<const TokenSymbol&>(stream.peek());
+
+        if (token == ':') {
+            stream.get();
+            auto&& expr = getExpression(stream, *nameTable);
+            assert(stream.get() == ";");
+            return make_unique<StatementReturn>(move(expr));
+        }
+        else if (token == ';') {
+            stream.get();
+            return make_unique<StatementReturn>();
+        }
+        throw CompileException();
+    }
+
+
     unique_ptr<Statement> getStatement(TokenStream& stream, shared_ptr<NameTable>& nameTable,
         bool disableExpr, bool disableFunc, bool disableLet) {
 
@@ -1221,6 +1248,9 @@ namespace Compiler {
             }
             if (tokenKeyword == "while") {
                 return getStatementWhile(stream, nameTable);
+            }
+            if (tokenKeyword == "return") {
+                return getStatementReturn(stream, nameTable);
             }
         }
 
@@ -1601,8 +1631,6 @@ namespace Builder {
                 whitesp.push(Instruments::Flow::call);
                 pushInteger(whitesp, solveLabel(op.id()));
 
-                whitesp.push(Instruments::Stack::push); // always return 0
-                pushInteger(whitesp, 0);
             }
             return whitesp;
         }
@@ -1687,6 +1715,10 @@ namespace Builder {
 
         convertLocalDeallocate(whitesp);
 
+        // default return value(0)
+        whitesp.push(Instruments::Stack::push);
+        pushInteger(whitesp, 0);
+
         whitesp.push(Instruments::Flow::retun);
 
         whitesp.push(Instruments::Flow::label);
@@ -1746,6 +1778,24 @@ namespace Builder {
     }
 
 
+    WhiteSpace& convertReturn(WhiteSpace& whitesp, const StatementReturn& stat) {
+
+        if (stat.retVal) {
+            convertExpression(whitesp, *stat.retVal);
+            whitesp.push(Instruments::Stack::swap);
+            convertLocalDeallocate(whitesp);
+        }
+        else {
+            convertLocalDeallocate(whitesp);
+            whitesp.push(Instruments::Stack::push);
+            pushInteger(whitesp, 0);
+        }
+
+        whitesp.push(Instruments::Flow::retun);
+        return whitesp;
+    }
+
+
     WhiteSpace& convertStatement(WhiteSpace& whitesp, const Statement& stat) {
         if (typeis<StatementFunction>(stat))
             return convertFunction(whitesp, dynamic_cast<const StatementFunction&>(stat));
@@ -1755,14 +1805,14 @@ namespace Builder {
             return convertIf(whitesp, dynamic_cast<const StatementIf&>(stat));
         if (typeis<StatementWhile>(stat))
             return convertWhile(whitesp, dynamic_cast<const StatementWhile&>(stat));
+        if (typeis<StatementReturn>(stat))
+            return convertReturn(whitesp, dynamic_cast<const StatementReturn&>(stat));
         try {
             convertExpression(whitesp, dynamic_cast<const Expression&>(stat));
             whitesp.push(Instruments::Stack::discard);
             return whitesp;
         }
-        catch (bad_cast) {
-
-        }
+        catch (bad_cast) { }
 
         throw GenerationException();
     }
