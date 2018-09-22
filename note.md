@@ -146,25 +146,31 @@ return value. `func:succ(a){return:a+1;}`.
 comment out. `# comment`
 
 
+### progress 23
+
+char literal `'a'` as integer. escape `\n`(LF), `\t`(TAB), `\s`(SPACE), `\'`, `\\`.
+`__getc()`．
+`__getiv(ptr)`, `__getcv(ptr)`. return value.
+
+remove `__xyz()`
+
 
 ## feature
 
-### A1
+### progress x24
 
-use build-in function `__geti` and `__getc`.
+use array.`let:x[5];`. `x` means `x[0]`.
 
-### A2
 
-initialize `let:x(1);`
+### progress x25
 
-### B3
+initialize.
+`let:a,b,c;`
+`let:a(1);`
+`let:x(1,2,3,4,5);` as array.
 
-pointer.
 
-### B2
+### progress x26
 
-use array.`let:x[5];`. `let:x(1,2,3,4,5);`.
-
-## spec
-
+string. `"abc"`.
 

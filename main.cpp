@@ -276,6 +276,35 @@ namespace Parser {
     }
 
 
+
+    TokenInteger parseChar(istream& is) {
+        is.get(); // '
+
+        integer var = 0;
+        int cc = is.peek();
+        bool escape = false;
+
+        while (cc = is.get(), escape || cc != '\'') {
+            if (!escape) {
+                if (cc == '\\') escape = true;
+                else var = (var << 8ll) | integer(cc);
+            }
+            else {
+                if (cc == '\\') var = (var << 8ll) | '\\';
+                else if (cc == 't') var = (var << 8ll) | '\t';
+                else if (cc == 'n') var = (var << 8ll) | '\n';
+                else if (cc == 's') var = (var << 8ll) | ' ';
+                else if (cc == '\'') var = (var << 8ll) | '\'';
+                else throw ParseException("unknown escape char");
+                escape = false;
+            }
+            if (is.eof()) throw ParseException("missing [']");
+        }
+
+        return TokenInteger(var);
+    }
+
+
     void parseLineCommentOut(istream& is) {
         while (!is.eof()) {
             int cc = is.get();
@@ -308,6 +337,9 @@ namespace Parser {
                 tokens.emplace_back(new TokenKeyword(parseKeyword(is)));
                 continue;
             }
+            if (cc == '\'') {
+                tokens.emplace_back(new TokenInteger(parseChar(is)));
+            }
             if (isValidSymbol(cc)) {
                 tokens.emplace_back(new TokenSymbol(parseSymbol(is)));
                 continue;
@@ -326,7 +358,6 @@ namespace Compiler {
 
     namespace Embedded {
         namespace Function {
-            const signed IDxyz = -999;
 
             const signed IDaadd = -10;
             const signed IDasub = -11;
@@ -350,6 +381,8 @@ namespace Compiler {
             const signed IDputc = -101;
             const signed IDgeti = -110;
             const signed IDgetc = -111;
+            const signed IDgetiv = -112;
+            const signed IDgetcv = -113;
 
 
         }
@@ -958,7 +991,7 @@ namespace Compiler {
         integer funcLabel;
         const vector<integer> argAddrs;
         StatementFunction(StatementScope&& _scope, integer _funcLabel, vector<integer>&& _argAddrs) :
-            StatementScope(move(_scope)), funcLabel(_funcLabel), argAddrs((_argAddrs.shrink_to_fit(), _argAddrs)){
+            StatementScope(move(_scope)), funcLabel(_funcLabel), argAddrs((_argAddrs.shrink_to_fit(), _argAddrs)) {
         }
     };
 
@@ -1447,11 +1480,6 @@ namespace Builder {
 
         switch (exps.id())
         {
-        case Embedded::Function::IDxyz: {
-            whitesp.push(Instruments::Stack::push);
-            pushInteger(whitesp, integer(999));
-            return whitesp;
-        }
         case Embedded::Function::IDequal: {
             whitesp.push(Instruments::Stack::push);
             pushInteger(whitesp, integer(1)); // zero
@@ -1620,6 +1648,29 @@ namespace Builder {
             whitesp.push(Instruments::Heap::retrieve);
             return whitesp;
         }
+        case Embedded::Function::IDgetc: {
+            whitesp.push(Instruments::Stack::push);
+            pushInteger(whitesp, Alignment::TempPtr);
+            whitesp.push(Instruments::IO::getchar);
+            whitesp.push(Instruments::Stack::push);
+            pushInteger(whitesp, Alignment::TempPtr);
+            whitesp.push(Instruments::Heap::retrieve);
+            return whitesp;
+        }
+        case Embedded::Function::IDgetiv: {
+            convertExpression(whitesp, exps[0]);
+            whitesp.push(Instruments::Stack::duplicate);
+            whitesp.push(Instruments::IO::getnumber);
+            whitesp.push(Instruments::Heap::retrieve);
+            return whitesp;
+        }
+        case Embedded::Function::IDgetcv: {
+            convertExpression(whitesp, exps[0]);
+            whitesp.push(Instruments::Stack::duplicate);
+            whitesp.push(Instruments::IO::getchar);
+            whitesp.push(Instruments::Heap::retrieve);
+            return whitesp;
+        }
         default: {
             throw OperatorException();
         }
@@ -1640,7 +1691,7 @@ namespace Builder {
 
                 for (int i = 0; i < op.argSize(); ++i)
                     convertExpression(whitesp, *op.args(i));
-                
+
                 whitesp.push(Instruments::Flow::call);
                 pushInteger(whitesp, solveLabel(op.id()));
 
@@ -1678,9 +1729,9 @@ namespace Builder {
 
     WhiteSpace& convertFunction(WhiteSpace& whitesp, const StatementFunction& func) {
         integer label = solveLabel(func.funcLabel);
-        
+
         whitesp.push(Instruments::Flow::jump);
-        pushInteger(whitesp, label+1);
+        pushInteger(whitesp, label + 1);
 
         whitesp.push(Instruments::Flow::label);
         pushInteger(whitesp, label);
@@ -1825,7 +1876,7 @@ namespace Builder {
             whitesp.push(Instruments::Stack::discard);
             return whitesp;
         }
-        catch (bad_cast) { }
+        catch (bad_cast) {}
 
         throw GenerationException();
     }
@@ -1842,11 +1893,12 @@ int main(int argc, char** argv) {
 
     // embedded definition
 
-    reservedNameTable.defineEmbeddedFunction("__xyz", Embedded::Function::IDxyz, 0);
-
     reservedNameTable.defineEmbeddedFunction("__puti", Embedded::Function::IDputi, 1);
     reservedNameTable.defineEmbeddedFunction("__putc", Embedded::Function::IDputc, 1);
     reservedNameTable.defineEmbeddedFunction("__geti", Embedded::Function::IDgeti, 0);
+    reservedNameTable.defineEmbeddedFunction("__getc", Embedded::Function::IDgetc, 0);
+    reservedNameTable.defineEmbeddedFunction("__getiv", Embedded::Function::IDgetiv, 1);
+    reservedNameTable.defineEmbeddedFunction("__getcv", Embedded::Function::IDgetcv, 1);
 
     // embedded definition
 

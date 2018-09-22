@@ -1,0 +1,17 @@
+
+func:main(){
+    let:c;
+    __puti(__getc() == 'A');
+    __puti(__getc() == 'a');
+    __puti(__getc() == '+');
+    __puti(__getc() == '\'');
+    __puti(__getc() == '\s');
+    __puti(__getc() == ' ');
+    __puti(__getc() == '\\');
+    __puti(__getc() == '\t');
+    __puti(__getc() == '.');
+    __puti(__getc() == 0); # CR = 13
+    __puti(__getc() == '\n');
+    __puti(__getcv(&c) == 'X');
+    __puti(c == 'X');
+}
