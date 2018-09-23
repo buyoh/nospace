@@ -1225,21 +1225,30 @@ namespace Compiler {
     unique_ptr<Statement> getStatementLet(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
         stream.get(); // assert_token<TokenKeyword>(stream.get(), "let", CompileException(stream, "expected let"));
         assert_token<TokenSymbol>(stream.get(), ':', CompileException(stream, "expected :"));
-        auto& varName = dynamic_cast<const TokenKeyword&>(stream.get());
-        if (nameTable->includeLocal(varName.str()) ||
-            reservedNameTable.include(varName.str())) {
-            throw CompileException(stream, "is already defined");
+
+        while (true) {
+            {
+                auto& varName = dynamic_cast<const TokenKeyword&>(stream.get()); // throw
+                if (nameTable->includeLocal(varName.str()) ||
+                    reservedNameTable.include(varName.str())) {
+                    throw CompileException(stream, "is already defined");
+                }
+                int length = 1;
+                if (stream.peek() == "[") {
+                    stream.get();
+                    auto expr = getExpression(stream, *nameTable);
+                    assert(typeis<FactorValue>(*expr));
+                    length = dynamic_cast<const FactorValue&>(*expr).get();
+                    assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ']');
+                }
+                nameTable->trymakeVariableAddr(varName.str(), length);
+            }
+
+            auto& next = stream.get();
+            if (next == ';') break;
+            if (next == ',') continue;
+            throw CompileException(stream, "expected ;");
         }
-        int length = 1;
-        if (stream.peek() == "[") {
-            stream.get();
-            auto expr = getExpression(stream, *nameTable);
-            assert(typeis<FactorValue>(*expr));
-            length = dynamic_cast<const FactorValue&>(*expr).get();
-            assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ']');
-        }
-        nameTable->trymakeVariableAddr(varName.str(), length);
-        assert_token<TokenSymbol>(stream.get(), ';', CompileException(stream, "expected ;"));
         return unique_ptr<Statement>(); // empty
     }
 

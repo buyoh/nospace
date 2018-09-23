@@ -163,19 +163,22 @@ use array.`let:x[5];`. `x` means `x[0]`.
 invalid `*(&a[1]) = 1`. (特に必要ないかな)
 
 
-
-## feature
-
-
-### progress x25
+### progress 25
 
 initialize.
 `let:a,b,c[3];`
+
+
+
+## feature
+
+### progress x25
+
 `let:a(1);`
 `let:x(1,2,3,4,5);` as array.
-
 
 ### progress x26
 
 string. `"abc"`.
+`let:str("abc");` equal to `let:str('a','b','c');`.
 
