@@ -1,0 +1,18 @@
+
+func:check(x){
+    __puti(4 <= x && x <= 6);
+    __puti(4 > x || x > 6);
+    __puti(!!x);
+    __puti(!(4 <= x && x <= 6));
+}
+
+func:main(){
+    let:n,x;
+    n = __geti();
+    while(n > 0){
+        x = __geti();
+        check(x);
+        n = n-1;
+        __putc(';');
+    }
+}

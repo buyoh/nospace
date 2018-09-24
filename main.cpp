@@ -13,9 +13,10 @@ template<typename Derived, typename Base,
 }
 
 
+// TODO: Exceptionではなく，function<Exception()>にしないと，Exceptionのコンストラクタが呼ばれてしまう
 template<typename Exception,
     typename enable_if<is_base_of<runtime_error, Exception>::value>::type* = nullptr>
-inline void assert_throw(bool expr, Exception&& err) { if (!expr) throw err; }
+    inline void assert_throw(bool expr, Exception&& err) { if (!expr) throw err; }
 
 
 // todo: assert を throw に書き換える
@@ -306,6 +307,12 @@ namespace Parser {
         if (c1 == '>') {
             if (c2 == '=') { is.get(); return TokenSymbol('>', '='); }
         }
+        if (c1 == '|') {
+            if (c2 == '|') { is.get(); return TokenSymbol('|', '|'); }
+        }
+        if (c1 == '&') {
+            if (c2 == '&') { is.get(); return TokenSymbol('&', '&'); }
+        }
 
         return TokenSymbol(c1);
     }
@@ -401,13 +408,18 @@ namespace Compiler {
             const signed IDamod = -14;
             const signed IDaminus = -15; // 単項
 
+            const signed IDand = -30;
+            const signed IDor = -31;
+
+            const signed IDnot = -35;
+            const signed IDnotnot = -36;
+
             const signed IDequal = -40;
             const signed IDnotequal = -41;
             const signed IDless = -42;
             const signed IDlesseq = -43;
             const signed IDgreater = -44;
             const signed IDgreatereq = -45;
-            const signed IDnot = -46;
 
             const signed IDassign = -60;
             const signed IDdereference = -65;
@@ -848,11 +860,35 @@ namespace Compiler {
 
                 if (typeis<FactorValue>(*stV)) {
                     // optimization
-                    dynamic_cast<FactorValue*>(stV.get())->get() *= -1;
+                    dynamic_cast<FactorValue&>(*stV).get() *= -1;
                     return move(stV);
                 }
                 else {
                     Operation stOp(Embedded::Function::IDaminus, 1);
+                    stOp.args(0) = move(stV);
+                    return make_unique<Operation>(move(stOp));
+                }
+            }
+            else if (tokenSymbol == '!') {
+                stream.get();
+                auto stV = getExpressionUnary(stream, nameTable);
+
+                if (typeis<Operation>(*stV)) {
+                    auto& stvRef = static_cast<Operation&>(*stV);
+                    if (stvRef.id() == Embedded::Function::IDnot) {
+                        // optimization
+                        static_cast<Operation&>(*stV).id() = Embedded::Function::IDnotnot;
+                        return move(stV);
+                    }
+                    else if (stvRef.id() == Embedded::Function::IDnotnot) {
+                        // optimization(`!!!`)
+                        static_cast<Operation&>(*stV).id() = Embedded::Function::IDnot;
+                        return move(stV);
+                    }
+                }
+
+                {
+                    Operation stOp(Embedded::Function::IDnot, 1);
                     stOp.args(0) = move(stV);
                     return make_unique<Operation>(move(stOp));
                 }
@@ -1042,8 +1078,8 @@ namespace Compiler {
         return root;
     }
 
-    // '='
-    unique_ptr<Expression> getExpressionAsg(TokenStream& stream, NameTable& nameTable) {
+    // &&
+    unique_ptr<Expression> getExpressionLogi(TokenStream& stream, NameTable& nameTable) {
         unique_ptr<Expression> root;
         unique_ptr<Expression>* curr = &root;
 
@@ -1051,15 +1087,25 @@ namespace Compiler {
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
+
             if (typeis<TokenSymbol>(token)) {
                 const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
 
-                if (tokenSymbol == '=') {
-                    auto new_ex = new Operation(Embedded::Function::IDassign, 2);
-                    new_ex->args(0) = move(*curr);
-                    curr->reset(new_ex);
+                // 左結合
+                auto commonProcedure = [&](Operation* new_ex) {
+                    (*new_ex).args(0) = move(root);
+                    root.reset(new_ex);
                     curr = &(*new_ex).args(1);
                     stream.get();
+                };
+
+                if (tokenSymbol == "&&") {
+                    auto new_ex = new Operation(Embedded::Function::IDand, 2);
+                    commonProcedure(new_ex);
+                }
+                else if (tokenSymbol == "||") {
+                    auto new_ex = new Operation(Embedded::Function::IDor, 2);
+                    commonProcedure(new_ex);
                 }
                 else {
                     break;
@@ -1069,6 +1115,42 @@ namespace Compiler {
                 throw CompileException(stream, "syntax error");
             }
             *curr = move(getExpressionComp(stream, nameTable));
+        }
+        return root;
+    }
+
+    // '='
+    unique_ptr<Expression> getExpressionAsg(TokenStream& stream, NameTable& nameTable) {
+        unique_ptr<Expression> root;
+        unique_ptr<Expression>* curr = &root;
+
+        *curr = move(getExpressionLogi(stream, nameTable));
+
+        while (!stream.eof()) {
+            const Token& token = stream.peek();
+            if (typeis<TokenSymbol>(token)) {
+                const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
+
+                // 右結合
+                auto commonProcedure = [&](Operation* new_ex) {
+                    new_ex->args(0) = move(*curr);
+                    curr->reset(new_ex);
+                    curr = &(*new_ex).args(1);
+                    stream.get();
+                };
+
+                if (tokenSymbol == '=') {
+                    auto new_ex = new Operation(Embedded::Function::IDassign, 2);
+                    commonProcedure(new_ex);
+                }
+                else {
+                    break;
+                }
+            }
+            else {
+                throw CompileException(stream, "syntax error");
+            }
+            *curr = move(getExpressionLogi(stream, nameTable));
         }
         return root;
     }
@@ -1233,7 +1315,7 @@ namespace Compiler {
                     reservedNameTable.include(varName.str())) {
                     throw CompileException(stream, "is already defined");
                 }
-                int length = 1;
+                integer length = 1;
                 if (stream.peek() == "[") {
                     stream.get();
                     auto expr = getExpression(stream, *nameTable);
@@ -1437,12 +1519,17 @@ namespace Builder {
         const integer TempPtr = 4;
         const integer GlobalPtr = 8;
 
-        const integer LabelOffset = 8;
+        const integer LabelOffset = 16;
 
         const integer LabelComparatorZero = 2;
         const integer LabelComparatorZero2 = 3;
         const integer LabelComparatorNegative = 4;
         const integer LabelComparatorNegative2 = 5;
+        const integer LabelComparatorAnd = 6;
+        const integer LabelComparatorAnd2 = 7;
+        const integer LabelComparatorOr = 8;
+        const integer LabelComparatorOr2 = 9;
+        const integer LabelComparatorOr3 = 10;
     }
 
 
@@ -1666,6 +1753,42 @@ namespace Builder {
 
             whitesp.push(Instruments::Flow::call);
             pushInteger(whitesp, Alignment::LabelComparatorNegative);
+            return whitesp;
+        }
+        case Embedded::Function::IDand: {
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
+            whitesp.push(Instruments::Flow::call);
+            pushInteger(whitesp, Alignment::LabelComparatorAnd);
+            return whitesp;
+        }
+        case Embedded::Function::IDor: {
+            convertExpression(whitesp, exps[0]);
+            convertExpression(whitesp, exps[1]);
+            whitesp.push(Instruments::Flow::call);
+            pushInteger(whitesp, Alignment::LabelComparatorOr);
+            return whitesp;
+        }
+        case Embedded::Function::IDnot: {
+            whitesp.push(Instruments::Stack::push);
+            pushInteger(whitesp, integer(1)); // zero
+            whitesp.push(Instruments::Stack::push);
+            pushInteger(whitesp, integer(0)); // notzero
+            convertExpression(whitesp, exps[0]);
+
+            whitesp.push(Instruments::Flow::call);
+            pushInteger(whitesp, Alignment::LabelComparatorZero);
+            return whitesp;
+        }
+        case Embedded::Function::IDnotnot: {
+            whitesp.push(Instruments::Stack::push);
+            pushInteger(whitesp, integer(0)); // zero
+            whitesp.push(Instruments::Stack::push);
+            pushInteger(whitesp, integer(1)); // notzero
+            convertExpression(whitesp, exps[0]);
+
+            whitesp.push(Instruments::Flow::call);
+            pushInteger(whitesp, Alignment::LabelComparatorZero);
             return whitesp;
         }
         case Embedded::Function::IDaadd: {
@@ -1930,6 +2053,17 @@ namespace Builder {
     }
 
 
+    // condition部分
+    WhiteSpace& convertIf_condition(WhiteSpace& whitesp, const StatementIf& ifstat, integer label) {
+        const Expression& expr = *(ifstat.cond);
+
+        convertExpression(whitesp, expr);
+        whitesp.push(Instruments::Flow::zerojump);
+        pushInteger(whitesp, label + 1);
+        return whitesp;
+    }
+
+
     // elsif, else も処理する
     WhiteSpace& convertIf(WhiteSpace& whitesp, const StatementIf& ifstat) {
         integer label = solveLabel(ifstat.label);
@@ -1938,9 +2072,7 @@ namespace Builder {
         pushInteger(whitesp, label);
 
         if (ifstat.cond) {
-            convertExpression(whitesp, *(ifstat.cond));
-            whitesp.push(Instruments::Flow::zerojump);
-            pushInteger(whitesp, label + 1);
+            convertIf_condition(whitesp, ifstat, label);
         }
 
         convertOpenScope(whitesp, ifstat);
@@ -2078,6 +2210,57 @@ int main(int argc, char** argv) {
     code.push(Instruments::Flow::label);
     pushInteger(code, Alignment::LabelComparatorNegative2);
     code.push(Instruments::Stack::discard);
+    code.push(Instruments::Flow::retun);
+
+    // [value1][value2] and
+    // 言語仕様上重実装
+    code.push(Instruments::Flow::label);
+    pushInteger(code, Alignment::LabelComparatorAnd); // [v1][v2]
+
+    code.push(Instruments::Flow::zerojump);
+    pushInteger(code, Alignment::LabelComparatorAnd2); // [v1]
+    code.push(Instruments::Stack::duplicate); // Dammy
+    code.push(Instruments::Flow::zerojump);
+    pushInteger(code, Alignment::LabelComparatorAnd2); // [v1]
+
+    code.push(Instruments::Stack::discard); // [j][u]
+    code.push(Instruments::Stack::push);
+    pushInteger(code, 1);
+    code.push(Instruments::Flow::retun);
+
+    code.push(Instruments::Flow::label);
+    pushInteger(code, Alignment::LabelComparatorAnd2);
+    code.push(Instruments::Stack::discard);
+    code.push(Instruments::Stack::push);
+    pushInteger(code, 0);
+
+    code.push(Instruments::Flow::retun);
+
+    // [value1][value2] or
+    // 言語仕様上重実装
+    code.push(Instruments::Flow::label);
+    pushInteger(code, Alignment::LabelComparatorOr); // [v1][v2]
+
+    code.push(Instruments::Flow::zerojump);
+    pushInteger(code, Alignment::LabelComparatorOr2); // [v1]
+    code.push(Instruments::Stack::discard);
+    code.push(Instruments::Stack::push);
+    pushInteger(code, 1);
+    code.push(Instruments::Flow::retun);
+
+    code.push(Instruments::Flow::label);
+    pushInteger(code, Alignment::LabelComparatorOr2);
+
+    code.push(Instruments::Flow::zerojump);
+    pushInteger(code, Alignment::LabelComparatorOr3);
+    code.push(Instruments::Stack::push);
+    pushInteger(code, 1);
+    code.push(Instruments::Flow::retun);
+
+    code.push(Instruments::Flow::label);
+    pushInteger(code, Alignment::LabelComparatorOr3);
+    code.push(Instruments::Stack::push);
+    pushInteger(code, 0);
     code.push(Instruments::Flow::retun);
 
 

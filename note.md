@@ -121,7 +121,7 @@ operation `<`, `==`. 0 means false, 1 means true.
 
 ### progress 18
 
-operation `!`, `!=`, `<=`, `>`, `>=`.
+operation `!=`, `<=`, `>`, `>=`.
 
 - ラベルに関する致命的なバグ複数の修正など
 
@@ -169,6 +169,12 @@ initialize.
 `let:a,b,c[3];`
 
 
+### progress 26
+
+operation `!`, `&&`, `||`
+
+
+
 
 ## feature
 
@@ -182,3 +188,10 @@ initialize.
 string. `"abc"`.
 `let:str("abc");` equal to `let:str('a','b','c');`.
 
+### progress x27
+
+operator `+=`,`-=`,`*=`,`/=`,`%=`
+
+### progress x28
+
+optimization `if (a<b)`, `if (a==b)`.
