@@ -744,13 +744,13 @@ namespace Compiler {
 
         if (typeis<TokenInteger>(token)) {
 
-            integer val = dynamic_cast<const TokenInteger&>(token).get();
+            integer val = static_cast<const TokenInteger&>(token).get();
             stream.get();
             return make_unique<FactorValue>(val);
         }
         else if (typeis<TokenKeyword>(token)) {
 
-            const auto& tokenKeyword = dynamic_cast<const TokenKeyword&>(token);
+            const auto& tokenKeyword = static_cast<const TokenKeyword&>(token);
 
             if (reservedNameTable.include(tokenKeyword.str())) {
 
@@ -760,7 +760,7 @@ namespace Compiler {
                     throw CompileException(stream, "it is a reserved keyword");
                 }
                 else if (typeis<NameEntryFunction>(entry)) {
-                    auto& funcEntry = dynamic_cast<const NameEntryFunction&>(entry);
+                    auto& funcEntry = static_cast<const NameEntryFunction&>(entry);
                     Operation exps(funcEntry.address(), funcEntry.argLength());
 
                     try {
@@ -793,7 +793,7 @@ namespace Compiler {
                     if (!typeis<NameEntryFunction>(ref.first))
                         throw CompileException(stream, "it is not a function");
 
-                    const auto& funcEntry = dynamic_cast<const NameEntryFunction&>(ref.first);
+                    const auto& funcEntry = static_cast<const NameEntryFunction&>(ref.first);
                     Operation exps(funcEntry.address(), funcEntry.argLength());
 
                     assert_token<TokenSymbol>(stream.get(), '(', CompileException(stream, "expected ("));
@@ -820,7 +820,7 @@ namespace Compiler {
             }
         }
         else if (typeis<TokenSymbol>(token)) {
-            const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
+            const auto& tokenSymbol = static_cast<const TokenSymbol&>(token);
 
             if (tokenSymbol == '(') {
                 stream.get();
@@ -834,7 +834,7 @@ namespace Compiler {
                 auto stV = getExpressionVal(stream, nameTable);
 
                 if (typeis<FactorVariable>(*stV)) {
-                    return make_unique<FactorAddress>(*dynamic_cast<FactorVariable*>(stV.get()));
+                    return make_unique<FactorAddress>(static_cast<FactorVariable&>(*stV));
                 }
                 else {
                     throw CompileException(stream, "it's not a variable");
@@ -852,7 +852,7 @@ namespace Compiler {
         const Token& token = stream.peek();
 
         if (typeis<TokenSymbol>(token)) {
-            const TokenSymbol& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
+            const TokenSymbol& tokenSymbol = static_cast<const TokenSymbol&>(token);
 
             if (tokenSymbol == '-') {
                 stream.get();
@@ -860,7 +860,7 @@ namespace Compiler {
 
                 if (typeis<FactorValue>(*stV)) {
                     // optimization
-                    dynamic_cast<FactorValue&>(*stV).get() *= -1;
+                    static_cast<FactorValue&>(*stV).get() *= -1;
                     return move(stV);
                 }
                 else {
@@ -925,13 +925,13 @@ namespace Compiler {
             if (typeis<FactorVariable>(*stV)) {
                 // variable
                 auto stOp = make_unique<Operation>(Embedded::Function::IDindexer, 2);
-                stOp->args(0) = make_unique<FactorAddress>(*dynamic_cast<FactorVariable*>(stV.get()));
+                stOp->args(0) = make_unique<FactorAddress>(static_cast<FactorVariable&>(*stV));
                 stOp->args(1) = move(index);
                 return stOp;
             }
             else if (typeis<Operation>(*stV)) {
                 // derefference
-                auto& o = dynamic_cast<Operation&>(*stV);
+                auto& o = static_cast<Operation&>(*stV);
                 assert_throw(
                     o.id() == Embedded::Function::IDdereference,
                     CompileException(stream, "must be a derefference or a variable"));
@@ -962,7 +962,7 @@ namespace Compiler {
             const Token& token = stream.peek();
 
             if (typeis<TokenSymbol>(token)) {
-                const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
+                const auto& tokenSymbol = static_cast<const TokenSymbol&>(token);
 
                 if (tokenSymbol == '*' || tokenSymbol == '/' || tokenSymbol == '%') {
                     auto new_ex = new Operation(
@@ -997,7 +997,7 @@ namespace Compiler {
             const Token& token = stream.peek();
 
             if (typeis<TokenSymbol>(token)) {
-                const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
+                const auto& tokenSymbol = static_cast<const TokenSymbol&>(token);
 
                 if (tokenSymbol == '+' || tokenSymbol == '-') {
 
@@ -1032,7 +1032,7 @@ namespace Compiler {
             const Token& token = stream.peek();
 
             if (typeis<TokenSymbol>(token)) {
-                const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
+                const auto& tokenSymbol = static_cast<const TokenSymbol&>(token);
 
                 // 左結合
                 auto commonProcedure = [&](Operation* new_ex) {
@@ -1089,7 +1089,7 @@ namespace Compiler {
             const Token& token = stream.peek();
 
             if (typeis<TokenSymbol>(token)) {
-                const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
+                const auto& tokenSymbol = static_cast<const TokenSymbol&>(token);
 
                 // 左結合
                 auto commonProcedure = [&](Operation* new_ex) {
@@ -1129,7 +1129,7 @@ namespace Compiler {
         while (!stream.eof()) {
             const Token& token = stream.peek();
             if (typeis<TokenSymbol>(token)) {
-                const auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
+                const auto& tokenSymbol = static_cast<const TokenSymbol&>(token);
 
                 // 右結合
                 auto commonProcedure = [&](Operation* new_ex) {
@@ -1260,7 +1260,7 @@ namespace Compiler {
             auto& token = stream.peek();
 
             if (typeis<TokenSymbol>(token)) {
-                auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
+                auto& tokenSymbol = static_cast<const TokenSymbol&>(token);
                 if (tokenSymbol == '}') {
                     stream.get(); break;
                 }
@@ -1290,7 +1290,7 @@ namespace Compiler {
             auto& token = stream.peek();
 
             if (typeis<TokenSymbol>(token)) {
-                auto& tokenSymbol = dynamic_cast<const TokenSymbol&>(token);
+                auto& tokenSymbol = static_cast<const TokenSymbol&>(token);
                 if (tokenSymbol == '}') {
                     stream.get(); break;
                 }
@@ -1436,7 +1436,7 @@ namespace Compiler {
         assert(dynamic_cast<const TokenKeyword&>(stream.get()) == "return");
 
         assert(typeis<TokenSymbol>(stream.peek()));
-        auto& token = dynamic_cast<const TokenSymbol&>(stream.peek());
+        auto& token = static_cast<const TokenSymbol&>(stream.peek());
 
         if (token == ':') {
             stream.get();
@@ -1461,7 +1461,7 @@ namespace Compiler {
             // ...
         }
         else if (typeis<TokenKeyword>(token)) {
-            auto& tokenKeyword = dynamic_cast<const TokenKeyword&>(token);
+            auto& tokenKeyword = static_cast<const TokenKeyword&>(token);
             if (tokenKeyword == "func") {
                 if (disableFunc) throw CompileException(stream, "can't define function");
                 return getStatementFunction(stream, nameTable);
@@ -1478,7 +1478,7 @@ namespace Compiler {
             // ...
         }
         else if (typeis<TokenKeyword>(token)) {
-            auto& tokenKeyword = dynamic_cast<const TokenKeyword&>(token);
+            auto& tokenKeyword = static_cast<const TokenKeyword&>(token);
             if (tokenKeyword == "if") {
                 return getStatementIf(stream, nameTable, false);
             }
@@ -1650,11 +1650,11 @@ namespace Builder {
     WhiteSpace& convertValue(WhiteSpace& whitesp, const Factor& factor) {
         if (typeis<FactorValue>(factor)) {
             whitesp.push(Instruments::Stack::push);
-            pushInteger(whitesp, dynamic_cast<const FactorValue&>(factor).get());
+            pushInteger(whitesp, static_cast<const FactorValue&>(factor).get());
             return whitesp;
         }
         else if (typeis<FactorVariable>(factor)) {
-            const auto& var = dynamic_cast<const FactorVariable&>(factor);
+            const auto& var = static_cast<const FactorVariable&>(factor);
             // calculate addr
             convertCalculateLocalVariablePtr(whitesp, var);
             // retirieve
@@ -1662,7 +1662,7 @@ namespace Builder {
             return whitesp;
         }
         else if (typeis<FactorAddress>(factor)) {
-            const auto& var = dynamic_cast<const FactorAddress&>(factor);
+            const auto& var = static_cast<const FactorAddress&>(factor);
             // calculate addr
             convertCalculateLocalVariablePtr(whitesp, var);
             return whitesp;
@@ -1830,11 +1830,11 @@ namespace Builder {
         }
         case Embedded::Function::IDassign: {
             if (typeis<FactorVariable>(exps[0])) {
-                const FactorVariable& var = dynamic_cast<const FactorVariable&>(exps[0]);
+                const FactorVariable& var = static_cast<const FactorVariable&>(exps[0]);
                 convertCalculateLocalVariablePtr(whitesp, var);
             }
             else if (typeis<Operation>(exps[0])) {
-                const auto& dref = dynamic_cast<const Operation&>(exps[0]);
+                const auto& dref = static_cast<const Operation&>(exps[0]);
                 if (dref.id() == Embedded::Function::IDdereference) {
                     convertExpression(whitesp, dref[0]);
                 }
@@ -1923,7 +1923,7 @@ namespace Builder {
 
         if (typeis<Operation>(exps)) {
 
-            const Operation& op = dynamic_cast<const Operation&>(exps);
+            const Operation& op = static_cast<const Operation&>(exps);
 
             if (op.id() < 0) {
                 convertEmbeddedExpression(whitesp, op);
@@ -2057,6 +2057,37 @@ namespace Builder {
     WhiteSpace& convertIf_condition(WhiteSpace& whitesp, const StatementIf& ifstat, integer label) {
         const Expression& expr = *(ifstat.cond);
 
+        // optimization
+        if (typeis<Operation>(expr)) {
+            const Operation& op = static_cast<const Operation&>(expr);
+            switch (op.id()){
+            case Embedded::Function::IDnotequal: {
+                convertExpression(whitesp, op[0]);
+                convertExpression(whitesp, op[1]);
+                whitesp.push(Instruments::Arithmetic::sub);
+                whitesp.push(Instruments::Flow::zerojump);
+                pushInteger(whitesp, label + 1);
+                return whitesp;
+            }
+            case Embedded::Function::IDgreatereq: {
+                convertExpression(whitesp, op[0]);
+                convertExpression(whitesp, op[1]);
+                whitesp.push(Instruments::Arithmetic::sub);
+                whitesp.push(Instruments::Flow::negativejump);
+                pushInteger(whitesp, label + 1);
+                return whitesp;
+            }
+            case Embedded::Function::IDlesseq: {
+                convertExpression(whitesp, op[0]);
+                convertExpression(whitesp, op[1]);
+                whitesp.push(Instruments::Stack::swap);
+                whitesp.push(Instruments::Arithmetic::sub);
+                whitesp.push(Instruments::Flow::negativejump);
+                pushInteger(whitesp, label + 1);
+                return whitesp;
+            }
+            }
+        }
         convertExpression(whitesp, expr);
         whitesp.push(Instruments::Flow::zerojump);
         pushInteger(whitesp, label + 1);

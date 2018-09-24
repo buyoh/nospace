@@ -173,7 +173,9 @@ initialize.
 
 operation `!`, `&&`, `||`
 
+### progress 26.1
 
+optimization `if (a<=b)`, `if (a>=b)`, `if (a!=b)`.
 
 
 ## feature
@@ -191,7 +193,3 @@ string. `"abc"`.
 ### progress x27
 
 operator `+=`,`-=`,`*=`,`/=`,`%=`
-
-### progress x28
-
-optimization `if (a<b)`, `if (a==b)`.
