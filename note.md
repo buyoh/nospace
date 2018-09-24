@@ -181,7 +181,8 @@ optimization `if (a<=b)`, `if (a>=b)`, `if (a!=b)`.
 ### progress 27
 
 `let:a(1);`
-`let:x(1,2,3,4,5);` as array.
+`let:x[5](1,2,3,4,5);` as array.
+`let:dp[5](0);` is valid.
 
 
 ## feature
