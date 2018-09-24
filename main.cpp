@@ -1172,7 +1172,7 @@ namespace Compiler {
 
     struct StatementScope : public Statement {
         shared_ptr<NameTable> nameTable;
-        vector<unique_ptr<Statement>> statements;
+        list<unique_ptr<Statement>> statements;
 
         StatementScope(shared_ptr<NameTable>& _nameTable) :nameTable(_nameTable), statements() { }
         StatementScope(shared_ptr<NameTable>&& _nameTable) :nameTable(move(_nameTable)), statements() { }
@@ -1190,11 +1190,12 @@ namespace Compiler {
     };
 
 
-    // TODO: 無くす方向で
-    // if,while等のlet,funcが使えないスコープ
+    // nameTableを持たないスコープ
     struct StatementOpenScope : public Statement {
-        weak_ptr<NameTable> parentNameTable;
-        vector<unique_ptr<Statement>> statements;
+    private:
+        weak_ptr<NameTable> parentNameTable; // TODO: 使われていないので消す
+    public:
+        list<unique_ptr<Statement>> statements;
 
         StatementOpenScope(shared_ptr<NameTable>& _parentNameTable, bool)
             :parentNameTable(_parentNameTable), statements() { }
@@ -1239,6 +1240,12 @@ namespace Compiler {
     };
 
 
+    struct StatementLetInit : public Statement {
+        // <address, expr>
+        vector<pair<integer, unique_ptr<Expression>>> assignments;
+    };
+
+
     //
 
 
@@ -1267,7 +1274,8 @@ namespace Compiler {
             }
 
             //localScope.statements.emplace_back(new Statement(getStatement(stream, localScope.nameTable)));
-            localScope->statements.push_back(getStatement(stream, localScope->nameTable, globalScope, !globalScope, false));
+            auto statement = getStatement(stream, localScope->nameTable, globalScope, !globalScope, false);
+            localScope->statements.push_back(move(statement));
             if (!localScope->statements.back()) localScope->statements.pop_back();
         }
         if (!globalScope)
@@ -1276,8 +1284,7 @@ namespace Compiler {
     }
 
 
-    // TODO: 無くす方向で
-    // if,while等のlet,funcが使えないスコープ
+    // nameTableを持たないスコープ
     unique_ptr<StatementOpenScope> getStatementsOpenScope(TokenStream& stream, shared_ptr<NameTable>& parentNameTable) {
         auto scope = make_unique<StatementOpenScope>(parentNameTable, true);
 
@@ -1304,34 +1311,59 @@ namespace Compiler {
     }
 
 
-    unique_ptr<Statement> getStatementLet(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
+    void procStatementLetItem(TokenStream& stream, shared_ptr<NameTable>& nameTable, StatementLetInit& letinit) {
+        auto& varName = dynamic_cast<const TokenKeyword&>(stream.get()); // throw
+        if (nameTable->includeLocal(varName.str()) ||
+            reservedNameTable.include(varName.str())) {
+            throw CompileException(stream, "is already defined");
+        }
+        integer length = 1;
+        // array length
+        if (stream.peek() == '[') {
+            stream.get();
+            auto expr = getExpression(stream, *nameTable);
+            assert(typeis<FactorValue>(*expr));
+            length = dynamic_cast<const FactorValue&>(*expr).get();
+            assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ']');
+        }
+        const NameEntry& entry = nameTable->trymakeVariableAddr(varName.str(), length);
+        // initialization
+        if (stream.peek() == '(') {
+            stream.get();
+            for (int first = true, cnt = 0;; first = false, ++cnt) {
+                if (stream.peek() == ')') {
+                    if (!first) throw CompileException(stream, "unexpected ,");
+                    stream.get();
+                    break;
+                }
+                if (cnt >= length) throw CompileException(stream, "too many expressions");
+
+                letinit.assignments.emplace_back(entry.address() + cnt, move(getExpression(stream, *nameTable)));
+
+                auto& term = stream.get();
+                if (term == ',') continue;
+                if (term == ')') break;
+                throw CompileException(stream, "expected )");
+            }
+        }
+    }
+
+
+    unique_ptr<StatementLetInit> getStatementLet(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
         stream.get(); // assert_token<TokenKeyword>(stream.get(), "let", CompileException(stream, "expected let"));
         assert_token<TokenSymbol>(stream.get(), ':', CompileException(stream, "expected :"));
+        
+        StatementLetInit letinit;
 
         while (true) {
-            {
-                auto& varName = dynamic_cast<const TokenKeyword&>(stream.get()); // throw
-                if (nameTable->includeLocal(varName.str()) ||
-                    reservedNameTable.include(varName.str())) {
-                    throw CompileException(stream, "is already defined");
-                }
-                integer length = 1;
-                if (stream.peek() == "[") {
-                    stream.get();
-                    auto expr = getExpression(stream, *nameTable);
-                    assert(typeis<FactorValue>(*expr));
-                    length = dynamic_cast<const FactorValue&>(*expr).get();
-                    assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ']');
-                }
-                nameTable->trymakeVariableAddr(varName.str(), length);
-            }
+            procStatementLetItem(stream, nameTable, letinit);
 
             auto& next = stream.get();
             if (next == ';') break;
             if (next == ',') continue;
             throw CompileException(stream, "expected ;");
         }
-        return unique_ptr<Statement>(); // empty
+        return make_unique<StatementLetInit>(move(letinit));
     }
 
 
@@ -1347,14 +1379,16 @@ namespace Compiler {
         assert_token<TokenSymbol>(stream.get(), '(', CompileException(stream, "expected ("));
 
 
-        // accept: "func:hoge(a,b,c,){}"
         list<string> argStrs;
 
-        for (;;) {
+        for (bool first = true;; first = false) {
             assert(!stream.eof());
             auto& token = stream.get();
 
-            if (token == ")") break;
+            if (token == ')') {
+                if (!first) throw CompileException(stream, "unexpected ,");
+                break;
+            }
 
             assert(typeis<TokenKeyword>(token));
             // let
@@ -1520,6 +1554,7 @@ namespace Builder {
         const integer GlobalPtr = 8;
 
         const integer LabelOffset = 16;
+        const integer LabelUserCodeBegin = 0;
 
         const integer LabelComparatorZero = 2;
         const integer LabelComparatorZero2 = 3;
@@ -1929,7 +1964,6 @@ namespace Builder {
                 convertEmbeddedExpression(whitesp, op);
             }
             else {
-
                 for (int i = 0; i < op.argSize(); ++i)
                     convertExpression(whitesp, *op.args(i));
 
@@ -2141,17 +2175,39 @@ namespace Builder {
     }
 
 
+    WhiteSpace& convertLetInit(WhiteSpace& whitesp, const StatementLetInit& stat) {
+
+        if (stat.assignments.empty()) return whitesp;
+
+        integer baseaddr = stat.assignments[0].first;
+
+        convertCalculateLocalVariablePtr(whitesp, baseaddr);
+        int cnt = stat.assignments.size();
+        for (const auto& a : stat.assignments) {
+            if (cnt != 1) whitesp.push(Instruments::Stack::duplicate);
+            whitesp.push(Instruments::Stack::push);
+            pushInteger(whitesp, a.first - baseaddr);
+            whitesp.push(Instruments::Arithmetic::add);
+            convertExpression(whitesp, *a.second);
+            whitesp.push(Instruments::Heap::store);
+        }
+        return whitesp;
+    }
+
+
     WhiteSpace& convertStatement(WhiteSpace& whitesp, const Statement& stat) {
         if (typeis<StatementFunction>(stat))
-            return convertFunction(whitesp, dynamic_cast<const StatementFunction&>(stat));
+            return convertFunction(whitesp, static_cast<const StatementFunction&>(stat));
         if (typeis<StatementScope>(stat)) // 未実装()
-            return convertScope(whitesp, dynamic_cast<const StatementScope&>(stat));
+            return convertScope(whitesp, static_cast<const StatementScope&>(stat));
         if (typeis<StatementIf>(stat))
-            return convertIf(whitesp, dynamic_cast<const StatementIf&>(stat));
+            return convertIf(whitesp, static_cast<const StatementIf&>(stat));
         if (typeis<StatementWhile>(stat))
-            return convertWhile(whitesp, dynamic_cast<const StatementWhile&>(stat));
+            return convertWhile(whitesp, static_cast<const StatementWhile&>(stat));
         if (typeis<StatementReturn>(stat))
-            return convertReturn(whitesp, dynamic_cast<const StatementReturn&>(stat));
+            return convertReturn(whitesp, static_cast<const StatementReturn&>(stat));
+        if (typeis<StatementLetInit>(stat))
+            return convertLetInit(whitesp, static_cast<const StatementLetInit&>(stat));
         try {
             convertExpression(whitesp, dynamic_cast<const Expression&>(stat));
             whitesp.push(Instruments::Stack::discard);
@@ -2214,12 +2270,10 @@ int main(int argc, char** argv) {
     pushInteger(code, Alignment::GlobalPtr + globalScope.nameTable->localHeapSize());
     code.push(Instruments::Heap::store);
 
-    // call main
-    code.push(Instruments::Flow::call);
-    pushInteger(code, solveLabel(mainEntry.address()));
-    code.push(Instruments::Flow::exit);
 
     // embedded utilities
+    code.push(Instruments::Flow::jump);
+    pushInteger(code, Alignment::LabelUserCodeBegin);
 
     // [jumped][unjumped][value] zerojump
     code.push(Instruments::Flow::label);
@@ -2294,13 +2348,23 @@ int main(int argc, char** argv) {
     pushInteger(code, 0);
     code.push(Instruments::Flow::retun);
 
+    // terminal
+    code.push(Instruments::Flow::label);
+    pushInteger(code, Alignment::LabelUserCodeBegin);
+
 
     // body
     convertScope(code, globalScope);
 
-    // flush
+    // call main
+    code.push(Instruments::Flow::call);
+    pushInteger(code, solveLabel(mainEntry.address()));
+    code.push(Instruments::Flow::exit);
 
+
+    // flush
     cout << code << flush;
+
     return 0;
 }
 

@@ -1,0 +1,22 @@
+
+func:rev(arr, n){
+    let:i(n/2),t;
+    while(i >= 0){
+        t = *(arr+i);
+        *(arr+i) = *(arr+n-i-1);
+        *(arr+n-i-1) = t;
+        i = i-1;
+    }
+}
+
+func:main(){
+    let:x[5](1,2,3,4,5);
+
+    rev(&x, 5);
+    
+    __puti(x[0]);
+    __puti(x[1]);
+    __puti(x[2]);
+    __puti(x[3]);
+    __puti(x[4]);
+}

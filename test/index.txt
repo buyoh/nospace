@@ -19,3 +19,5 @@ yukicoder646_1_code.txt yukicoder646_1_stdin.txt yukicoder646_1_expected.txt
 018_code.txt 018_stdin.txt 018_expected.txt
 019_code.txt 019_stdin.txt 019_expected.txt
 020_code.txt 020_stdin.txt 020_expected.txt
+021_code.txt empty.txt 021_expected.txt
+022_code.txt empty.txt 022_expected.txt

@@ -178,12 +178,13 @@ operation `!`, `&&`, `||`
 optimization `if (a<=b)`, `if (a>=b)`, `if (a!=b)`.
 
 
-## feature
-
-### progress x25
+### progress 27
 
 `let:a(1);`
 `let:x(1,2,3,4,5);` as array.
+
+
+## feature
 
 ### progress x26
 
