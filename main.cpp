@@ -2231,7 +2231,7 @@ namespace Builder {
         convertCalculateLocalVariablePtr(whitesp, baseaddr);
         int cnt = stat.assignments.size();
         for (const auto& a : stat.assignments) {
-            if (cnt != 1) whitesp.push(Instruments::Stack::duplicate);
+            if (cnt-- != 1) whitesp.push(Instruments::Stack::duplicate);
             whitesp.push(Instruments::Stack::push);
             pushInteger(whitesp, a.first - baseaddr);
             whitesp.push(Instruments::Arithmetic::add);
