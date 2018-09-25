@@ -1,0 +1,29 @@
+
+func:main(){
+    let:a,b;
+    a = 3; b = 4;
+    __puti(a + b);
+    __puti(a += b);
+    __puti(a);
+    __putc(';');
+    a = 7; b = 3;
+    __puti(a - b);
+    __puti(a -= b);
+    __puti(a);
+    __putc(';');
+    a = 3; b = 2;
+    __puti(a * b);
+    __puti(a *= b);
+    __puti(a);
+    __putc(';');
+    a = 10; b = 2;
+    __puti(a / b);
+    __puti(a /= b);
+    __puti(a);
+    __putc(';');
+    a = 12; b = 5;
+    __puti(a % b);
+    __puti(a %= b);
+    __puti(a);
+    __putc(';');
+}

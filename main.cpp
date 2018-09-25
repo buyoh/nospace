@@ -295,23 +295,17 @@ namespace Parser {
         int c1 = is.get();
         int c2 = is.peek();
 
-        if (c1 == '=') {
-            if (c2 == '=') { is.get(); return TokenSymbol('=', '='); }
-        }
-        if (c1 == '!') {
-            if (c2 == '=') { is.get(); return TokenSymbol('!', '='); }
-        }
-        if (c1 == '<') {
-            if (c2 == '=') { is.get(); return TokenSymbol('<', '='); }
-        }
-        if (c1 == '>') {
-            if (c2 == '=') { is.get(); return TokenSymbol('>', '='); }
-        }
         if (c1 == '|') {
             if (c2 == '|') { is.get(); return TokenSymbol('|', '|'); }
         }
         if (c1 == '&') {
             if (c2 == '&') { is.get(); return TokenSymbol('&', '&'); }
+        }
+        if (c2 == '=') {
+            if (c1 == '+' || c1 == '-' || c1 == '*' || c1 == '/' || c1 == '%' ||
+                c1 == '=' || c1 == '!' || c1 == '<' || c1 == '>') {
+                is.get(); return TokenSymbol(c1, '=');
+            }
         }
 
         return TokenSymbol(c1);
@@ -422,8 +416,13 @@ namespace Compiler {
             const signed IDgreatereq = -45;
 
             const signed IDassign = -60;
-            const signed IDdereference = -65;
-            const signed IDindexer = -70;
+            const signed IDassignadd = -61;
+            const signed IDassignsub = -62;
+            const signed IDassignmul = -63;
+            const signed IDassigndiv = -64;
+            const signed IDassignmod = -65;
+            const signed IDdereference = -70;
+            const signed IDindexer = -75;
 
             const signed IDputi = -100;
             const signed IDputc = -101;
@@ -1143,6 +1142,26 @@ namespace Compiler {
                     auto new_ex = new Operation(Embedded::Function::IDassign, 2);
                     commonProcedure(new_ex);
                 }
+                else if (tokenSymbol == "+=") {
+                    auto new_ex = new Operation(Embedded::Function::IDassignadd, 2);
+                    commonProcedure(new_ex);
+                }
+                else if (tokenSymbol == "-=") {
+                    auto new_ex = new Operation(Embedded::Function::IDassignsub, 2);
+                    commonProcedure(new_ex);
+                }
+                else if (tokenSymbol == "*=") {
+                    auto new_ex = new Operation(Embedded::Function::IDassignmul, 2);
+                    commonProcedure(new_ex);
+                }
+                else if (tokenSymbol == "/=") {
+                    auto new_ex = new Operation(Embedded::Function::IDassigndiv, 2);
+                    commonProcedure(new_ex);
+                }
+                else if (tokenSymbol == "%=") {
+                    auto new_ex = new Operation(Embedded::Function::IDassignmod, 2);
+                    commonProcedure(new_ex);
+                }
                 else {
                     break;
                 }
@@ -1352,7 +1371,7 @@ namespace Compiler {
     unique_ptr<StatementLetInit> getStatementLet(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
         stream.get(); // assert_token<TokenKeyword>(stream.get(), "let", CompileException(stream, "expected let"));
         assert_token<TokenSymbol>(stream.get(), ':', CompileException(stream, "expected :"));
-        
+
         StatementLetInit letinit;
 
         while (true) {
@@ -1863,7 +1882,12 @@ namespace Builder {
             whitesp.push(Instruments::Arithmetic::sub);
             return whitesp;
         }
-        case Embedded::Function::IDassign: {
+        case Embedded::Function::IDassign:
+        case Embedded::Function::IDassignadd:
+        case Embedded::Function::IDassignsub:
+        case Embedded::Function::IDassignmul:
+        case Embedded::Function::IDassigndiv:
+        case Embedded::Function::IDassignmod: {
             if (typeis<FactorVariable>(exps[0])) {
                 const FactorVariable& var = static_cast<const FactorVariable&>(exps[0]);
                 convertCalculateLocalVariablePtr(whitesp, var);
@@ -1879,16 +1903,39 @@ namespace Builder {
                     whitesp.push(Instruments::Arithmetic::add);
                 }
             }
+            else { throw OperatorException(); }
+
+
+            if (exps.id() == Embedded::Function::IDassign) {
+                whitesp.push(Instruments::Stack::duplicate);
+                convertExpression(whitesp, exps[1]);
+                whitesp.push(Instruments::Heap::store);
+
+                whitesp.push(Instruments::Heap::retrieve);
+                return whitesp;
+            }
             else {
-                throw OperatorException();
+                whitesp.push(Instruments::Stack::duplicate);
+                whitesp.push(Instruments::Stack::duplicate);
+                whitesp.push(Instruments::Heap::retrieve);
+                convertExpression(whitesp, exps[1]);
+                switch (exps.id()) {
+                case Embedded::Function::IDassignadd:
+                    whitesp.push(Instruments::Arithmetic::add); break;
+                case Embedded::Function::IDassignsub:
+                    whitesp.push(Instruments::Arithmetic::sub); break;
+                case Embedded::Function::IDassignmul:
+                    whitesp.push(Instruments::Arithmetic::mul); break;
+                case Embedded::Function::IDassigndiv:
+                    whitesp.push(Instruments::Arithmetic::div); break;
+                case Embedded::Function::IDassignmod:
+                    whitesp.push(Instruments::Arithmetic::mod); break;
+                }
+                whitesp.push(Instruments::Heap::store);
+                whitesp.push(Instruments::Heap::retrieve);
+                return whitesp;
             }
 
-            whitesp.push(Instruments::Stack::duplicate);
-            convertExpression(whitesp, exps[1]);
-            whitesp.push(Instruments::Heap::store);
-
-            whitesp.push(Instruments::Heap::retrieve);
-            return whitesp;
         }
         case Embedded::Function::IDdereference: {
             convertExpression(whitesp, exps[0]);
@@ -2094,7 +2141,7 @@ namespace Builder {
         // optimization
         if (typeis<Operation>(expr)) {
             const Operation& op = static_cast<const Operation&>(expr);
-            switch (op.id()){
+            switch (op.id()) {
             case Embedded::Function::IDnotequal: {
                 convertExpression(whitesp, op[0]);
                 convertExpression(whitesp, op[1]);
@@ -2218,6 +2265,121 @@ namespace Builder {
         throw GenerationException();
     }
 
+
+    //
+
+
+    void attachEmbeddedHeader(WhiteSpace& code, const StatementScope& globalScope) {
+
+        // initialize memory
+
+        code.push(Instruments::Stack::push); //
+        pushInteger(code, Alignment::LocalHeapBegin);
+        code.push(Instruments::Stack::push);
+        pushInteger(code, Alignment::GlobalPtr);
+        code.push(Instruments::Heap::store);
+
+        code.push(Instruments::Stack::push); //
+        pushInteger(code, Alignment::LocalHeapEnd);
+        code.push(Instruments::Stack::push);
+        pushInteger(code, Alignment::GlobalPtr + globalScope.nameTable->localHeapSize());
+        code.push(Instruments::Heap::store);
+
+
+        // embedded utilities
+        code.push(Instruments::Flow::jump);
+        pushInteger(code, Alignment::LabelUserCodeBegin);
+
+        // [jumped][unjumped][value] zerojump
+        code.push(Instruments::Flow::label);
+        pushInteger(code, Alignment::LabelComparatorZero);
+        code.push(Instruments::Flow::zerojump);
+        pushInteger(code, Alignment::LabelComparatorZero2);
+        code.push(Instruments::Stack::swap);
+        code.push(Instruments::Flow::label);
+        pushInteger(code, Alignment::LabelComparatorZero2);
+        code.push(Instruments::Stack::discard);
+        code.push(Instruments::Flow::retun);
+
+        // [jumped][unjumped][value] negativejump
+        code.push(Instruments::Flow::label);
+        pushInteger(code, Alignment::LabelComparatorNegative);
+        code.push(Instruments::Flow::negativejump);
+        pushInteger(code, Alignment::LabelComparatorNegative2);
+        code.push(Instruments::Stack::swap);
+        code.push(Instruments::Flow::label);
+        pushInteger(code, Alignment::LabelComparatorNegative2);
+        code.push(Instruments::Stack::discard);
+        code.push(Instruments::Flow::retun);
+
+        // [value1][value2] and
+        // 言語仕様上重実装
+        code.push(Instruments::Flow::label);
+        pushInteger(code, Alignment::LabelComparatorAnd); // [v1][v2]
+
+        code.push(Instruments::Flow::zerojump);
+        pushInteger(code, Alignment::LabelComparatorAnd2); // [v1]
+        code.push(Instruments::Stack::duplicate); // Dammy
+        code.push(Instruments::Flow::zerojump);
+        pushInteger(code, Alignment::LabelComparatorAnd2); // [v1]
+
+        code.push(Instruments::Stack::discard); // [j][u]
+        code.push(Instruments::Stack::push);
+        pushInteger(code, 1);
+        code.push(Instruments::Flow::retun);
+
+        code.push(Instruments::Flow::label);
+        pushInteger(code, Alignment::LabelComparatorAnd2);
+        code.push(Instruments::Stack::discard);
+        code.push(Instruments::Stack::push);
+        pushInteger(code, 0);
+
+        code.push(Instruments::Flow::retun);
+
+        // [value1][value2] or
+        // 言語仕様上重実装
+        code.push(Instruments::Flow::label);
+        pushInteger(code, Alignment::LabelComparatorOr); // [v1][v2]
+
+        code.push(Instruments::Flow::zerojump);
+        pushInteger(code, Alignment::LabelComparatorOr2); // [v1]
+        code.push(Instruments::Stack::discard);
+        code.push(Instruments::Stack::push);
+        pushInteger(code, 1);
+        code.push(Instruments::Flow::retun);
+
+        code.push(Instruments::Flow::label);
+        pushInteger(code, Alignment::LabelComparatorOr2);
+
+        code.push(Instruments::Flow::zerojump);
+        pushInteger(code, Alignment::LabelComparatorOr3);
+        code.push(Instruments::Stack::push);
+        pushInteger(code, 1);
+        code.push(Instruments::Flow::retun);
+
+        code.push(Instruments::Flow::label);
+        pushInteger(code, Alignment::LabelComparatorOr3);
+        code.push(Instruments::Stack::push);
+        pushInteger(code, 0);
+        code.push(Instruments::Flow::retun);
+
+        // terminal
+        code.push(Instruments::Flow::label);
+        pushInteger(code, Alignment::LabelUserCodeBegin);
+    }
+
+
+    void attachEmbeddedFooter(WhiteSpace& code, const StatementScope& globalScope) {
+
+        auto& mainEntry = globalScope.nameTable->getLocal("main");
+        if (!typeis<NameEntryFunction>(mainEntry))
+            throw GenerationException();
+
+        code.push(Instruments::Flow::call);
+        pushInteger(code, solveLabel(mainEntry.address()));
+        code.push(Instruments::Flow::exit);
+    }
+
 }
 
 
@@ -2248,119 +2410,12 @@ int main(int argc, char** argv) {
 
     if (!globalScope.nameTable->includeLocal("main"))
         throw GenerationException();
-    auto& mainEntry = globalScope.nameTable->getLocal("main");
-    if (!typeis<NameEntryFunction>(mainEntry))
-        throw GenerationException();
 
     WhiteSpace code;
 
-    // header
-
-    // initialize memory
-
-    code.push(Instruments::Stack::push); //
-    pushInteger(code, Alignment::LocalHeapBegin);
-    code.push(Instruments::Stack::push);
-    pushInteger(code, Alignment::GlobalPtr);
-    code.push(Instruments::Heap::store);
-
-    code.push(Instruments::Stack::push); //
-    pushInteger(code, Alignment::LocalHeapEnd);
-    code.push(Instruments::Stack::push);
-    pushInteger(code, Alignment::GlobalPtr + globalScope.nameTable->localHeapSize());
-    code.push(Instruments::Heap::store);
-
-
-    // embedded utilities
-    code.push(Instruments::Flow::jump);
-    pushInteger(code, Alignment::LabelUserCodeBegin);
-
-    // [jumped][unjumped][value] zerojump
-    code.push(Instruments::Flow::label);
-    pushInteger(code, Alignment::LabelComparatorZero);
-    code.push(Instruments::Flow::zerojump);
-    pushInteger(code, Alignment::LabelComparatorZero2);
-    code.push(Instruments::Stack::swap);
-    code.push(Instruments::Flow::label);
-    pushInteger(code, Alignment::LabelComparatorZero2);
-    code.push(Instruments::Stack::discard);
-    code.push(Instruments::Flow::retun);
-
-    // [jumped][unjumped][value] negativejump
-    code.push(Instruments::Flow::label);
-    pushInteger(code, Alignment::LabelComparatorNegative);
-    code.push(Instruments::Flow::negativejump);
-    pushInteger(code, Alignment::LabelComparatorNegative2);
-    code.push(Instruments::Stack::swap);
-    code.push(Instruments::Flow::label);
-    pushInteger(code, Alignment::LabelComparatorNegative2);
-    code.push(Instruments::Stack::discard);
-    code.push(Instruments::Flow::retun);
-
-    // [value1][value2] and
-    // 言語仕様上重実装
-    code.push(Instruments::Flow::label);
-    pushInteger(code, Alignment::LabelComparatorAnd); // [v1][v2]
-
-    code.push(Instruments::Flow::zerojump);
-    pushInteger(code, Alignment::LabelComparatorAnd2); // [v1]
-    code.push(Instruments::Stack::duplicate); // Dammy
-    code.push(Instruments::Flow::zerojump);
-    pushInteger(code, Alignment::LabelComparatorAnd2); // [v1]
-
-    code.push(Instruments::Stack::discard); // [j][u]
-    code.push(Instruments::Stack::push);
-    pushInteger(code, 1);
-    code.push(Instruments::Flow::retun);
-
-    code.push(Instruments::Flow::label);
-    pushInteger(code, Alignment::LabelComparatorAnd2);
-    code.push(Instruments::Stack::discard);
-    code.push(Instruments::Stack::push);
-    pushInteger(code, 0);
-
-    code.push(Instruments::Flow::retun);
-
-    // [value1][value2] or
-    // 言語仕様上重実装
-    code.push(Instruments::Flow::label);
-    pushInteger(code, Alignment::LabelComparatorOr); // [v1][v2]
-
-    code.push(Instruments::Flow::zerojump);
-    pushInteger(code, Alignment::LabelComparatorOr2); // [v1]
-    code.push(Instruments::Stack::discard);
-    code.push(Instruments::Stack::push);
-    pushInteger(code, 1);
-    code.push(Instruments::Flow::retun);
-
-    code.push(Instruments::Flow::label);
-    pushInteger(code, Alignment::LabelComparatorOr2);
-
-    code.push(Instruments::Flow::zerojump);
-    pushInteger(code, Alignment::LabelComparatorOr3);
-    code.push(Instruments::Stack::push);
-    pushInteger(code, 1);
-    code.push(Instruments::Flow::retun);
-
-    code.push(Instruments::Flow::label);
-    pushInteger(code, Alignment::LabelComparatorOr3);
-    code.push(Instruments::Stack::push);
-    pushInteger(code, 0);
-    code.push(Instruments::Flow::retun);
-
-    // terminal
-    code.push(Instruments::Flow::label);
-    pushInteger(code, Alignment::LabelUserCodeBegin);
-
-
-    // body
+    attachEmbeddedHeader(code, globalScope);
     convertScope(code, globalScope);
-
-    // call main
-    code.push(Instruments::Flow::call);
-    pushInteger(code, solveLabel(mainEntry.address()));
-    code.push(Instruments::Flow::exit);
-
+    attachEmbeddedFooter(code, globalScope);
 
     // flush
     cout << code << flush;

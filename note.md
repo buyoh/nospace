@@ -185,6 +185,12 @@ optimization `if (a<=b)`, `if (a>=b)`, `if (a!=b)`.
 `let:dp[5](0);` is valid.
 
 
+### progress 28
+
+operator `+=`,`-=`,`*=`,`/=`,`%=`
+
+
+
 ## feature
 
 ### progress x26
@@ -192,6 +198,3 @@ optimization `if (a<=b)`, `if (a>=b)`, `if (a!=b)`.
 string. `"abc"`.
 `let:str("abc");` equal to `let:str('a','b','c');`.
 
-### progress x27
-
-operator `+=`,`-=`,`*=`,`/=`,`%=`
