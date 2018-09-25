@@ -261,6 +261,7 @@ class WhitespaceInterpreter
     def hep_ret(_)
         raise WhitespaceRuntimeError.new(self) if @stack.size < 1
         adr = @stack.pop
+        raise WhitespaceRuntimeError.new(self) if @heap[adr].nil?
         @stack.push(@heap[adr])
     end
     

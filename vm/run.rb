@@ -1,6 +1,4 @@
 
-STDERR.puts Dir.pwd
-
 require_relative './ws.rb'
 
 unless $*.size == 1 || $*.size == 2

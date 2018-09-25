@@ -11,4 +11,4 @@ end
 
 abort "failed: compilation" if $? != 0
 
-STDOUT.print ws+code.gsub(/\s/, '')
+STDOUT.print code.gsub(/\s/, '')+ws
