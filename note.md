@@ -193,8 +193,33 @@ operator `+=`,`-=`,`*=`,`/=`,`%=`
 
 ## feature
 
-### progress x26
+### progress x1
 
 string. `"abc"`.
 `let:str("abc");` equal to `let:str('a','b','c');`.
+
+
+### progress x2
+
+prototype
+`func:f(a,b,c);`
+
+
+### progress x3
+
+struct
+```
+struct: MyPair {
+    let: a;
+    let: b;
+}
+
+let: p<= MyPair;
+
+func:f(){
+    p.a = 0;
+}
+
+```
+
 

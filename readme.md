@@ -18,3 +18,7 @@ mailang to whitespace
 ### test
 
 `ruby test.rb`
+
+## documents
+
+see `./doc`
