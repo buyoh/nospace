@@ -13,18 +13,11 @@ template<typename Derived, typename Base,
 }
 
 
-// TODO: Exceptionではなく，function<Exception()>にしないと，Exceptionのコンストラクタが呼ばれてしまう
-template<typename Exception,
+template<typename Exception, typename... Args,
     typename enable_if<is_base_of<runtime_error, Exception>::value>::type* = nullptr>
-    inline void assert_throw(bool expr, Exception&& err) { if (!expr) throw err; }
+    inline void assert_throw(bool expr, Args&&... args) { if (!expr) throw Exception(args...); }
 
 
-// todo: assert を throw に書き換える
-
-
-struct TODOChottomatteneException : public runtime_error {
-    TODOChottomatteneException() :runtime_error("") { }
-};
 
 
 namespace WS {
@@ -107,7 +100,6 @@ namespace WS {
 
     WhiteSpace& pushInteger(WhiteSpace& whitesp, integer val) {
 
-        // 雑
         if (val < 0) {
             whitesp.push(Chr::TB);
             val = -val;
@@ -170,7 +162,7 @@ namespace Parser {
             int head = max((int)ptr - front, 0);
             int tail = min((int)ptr + back, (int)(tokens_.size()) - 1);
             for (; head <= tail; ++head)
-                os << *tokens_[head];
+                os << *tokens_[head] << ' ';
         }
     };
 
@@ -437,11 +429,11 @@ namespace Compiler {
 
 
     struct CompileException : runtime_error {
-        CompileException(const TokenStream& ts, const char* msg = "") :runtime_error(msg) {
-            //clog << "at: "; ts.print(clog, 8, 8); clog << endl; // TODO: msgに入れる
+        CompileException(const TokenStream& ts, const char* msg = "") :runtime_error(
+            [&ts, &msg]() {stringstream s; s << "at: "; ts.print(s, 8, 8); s << "\n" << msg; return s.str(); }()) {
         }
-        CompileException(const TokenStream& ts, string msg) :runtime_error(msg) {
-            //clog << "at: "; ts.print(clog, 8, 8); clog << endl;
+        CompileException(const TokenStream& ts, string msg) :runtime_error(
+            [&ts, &msg]() {stringstream s; s << "at: "; ts.print(s, 8, 8); s << "\n" << msg; return s.str(); }()) {
         }
         CompileException(const char* msg = "") :runtime_error(msg) {
         }
@@ -455,21 +447,23 @@ namespace Compiler {
     };
 
 
-    // usage: assert_token<TokenSymbol>(token, ':', CompileException(":("));
+    // usage: assert_token<TokenSymbol, CompileException>(token, ':', stream, ":(");
     template<typename ExpectedToken, typename Exception,
+        typename... Args,
         typename enable_if<is_base_of<runtime_error, Exception>::value>::type* = nullptr>
-        inline void assert_token(const Token& token, char expected, Exception&& err) {
+        inline void assert_token(const Token& token, char expected, Args&&... args) {
         if (!(typeis<ExpectedToken>(token) && static_cast<const ExpectedToken&>(token) == expected))
-            throw err;
+            throw Exception(args...);
     }
 
 
-    // usage: assert_token<TokenSymbol>(token, "+=", CompileException(":("));
+    // usage: assert_token<TokenSymbol, CompileException>(token, "+=", stream, ":(");
     template<typename ExpectedToken, typename Exception,
+        typename... Args,
         typename enable_if<is_base_of<runtime_error, Exception>::value>::type* = nullptr>
-        inline void assert_token(const Token& token, string expected, Exception&& err) {
+        inline void assert_token(const Token& token, string expected, Args&&... args) {
         if (!(typeis<ExpectedToken>(token) && static_cast<const ExpectedToken&>(token) == expected))
-            throw err;
+            throw Exception(args...);
     }
 
 
@@ -634,7 +628,7 @@ namespace Compiler {
         static inline bool isKeyword(integer id) { return id > 0; }
 
         inline void defineKeyword(const string& name, integer id) {
-            assert(isKeyword(id));
+            assert(isKeyword(id)); // memo: 製作者のミスによってのみraiseするのでassert
             entries_[name].reset(new NameEntryKeyword(name, id));
         }
         inline void defineEmbeddedFunction(const string& name, integer id, int argLength = 1) {
@@ -764,13 +758,13 @@ namespace Compiler {
 
                     try {
                         stream.get();
-                        assert_token<TokenSymbol>(stream.get(), '(', CompileException(stream, "expected ("));
+                        assert_token<TokenSymbol, CompileException>(stream.get(), '(', stream, "expected (");
                         for (int i = 0; i < funcEntry.argLength(); ++i) {
                             exps.args(i) = move(getExpression(stream, nameTable));
                             if (i + 1 < funcEntry.argLength())
-                                assert_token<TokenSymbol>(stream.get(), ',', CompileException(stream, "expected ,"));
+                                assert_token<TokenSymbol, CompileException>(stream.get(), ',', stream, "expected ,");
                         }
-                        assert_token<TokenSymbol>(stream.get(), ')', CompileException(stream, "expected )"));
+                        assert_token<TokenSymbol, CompileException>(stream.get(), ')', stream, "expected )");
                     }
                     catch (bad_cast) {
                         throw CompileException(stream, "invalid function call syntax");
@@ -795,14 +789,14 @@ namespace Compiler {
                     const auto& funcEntry = static_cast<const NameEntryFunction&>(ref.first);
                     Operation exps(funcEntry.address(), funcEntry.argLength());
 
-                    assert_token<TokenSymbol>(stream.get(), '(', CompileException(stream, "expected ("));
+                    assert_token<TokenSymbol, CompileException>(stream.get(), '(', stream, "expected (");
 
                     for (int i = 0; i < funcEntry.argLength(); ++i) {
                         exps.args(i) = move(getExpression(stream, nameTable));
                         if (i + 1 < funcEntry.argLength())
-                            assert_token<TokenSymbol>(stream.get(), ',', CompileException(stream, "expected ,"));
+                            assert_token<TokenSymbol, CompileException>(stream.get(), ',', stream, "expected ,");
                     }
-                    assert_token<TokenSymbol>(stream.get(), ')', CompileException(stream, "expected )"));
+                    assert_token<TokenSymbol, CompileException>(stream.get(), ')', stream, "expected )");
                     return make_unique<Operation>(move(exps));
                 }
                 else {
@@ -919,7 +913,7 @@ namespace Compiler {
 
             stream.get();
             auto index = getExpression(stream, nameTable);
-            assert_token<TokenSymbol>(stream.get(), ']', CompileException(stream, "expected ]"));
+            assert_token<TokenSymbol, CompileException>(stream.get(), ']', stream, "expected ]");
 
             if (typeis<FactorVariable>(*stV)) {
                 // variable
@@ -931,9 +925,9 @@ namespace Compiler {
             else if (typeis<Operation>(*stV)) {
                 // derefference
                 auto& o = static_cast<Operation&>(*stV);
-                assert_throw(
+                assert_throw<CompileException>(
                     o.id() == Embedded::Function::IDdereference,
-                    CompileException(stream, "must be a derefference or a variable"));
+                    stream, "must be a derefference or a variable");
                 auto stOp = make_unique<Operation>(Embedded::Function::IDindexer, 2);
                 stOp->args(0) = move(o.args(0));
                 stOp->args(1) = move(index);
@@ -1274,8 +1268,6 @@ namespace Compiler {
 
         auto localScope = make_unique<StatementScope>(localNameTable);
 
-        //assert_throw(globalScope || dynamic_cast<const TokenSymbol&>(stream.get()) == '{', 
-        //    CompileException("expected {"));
         if (!globalScope) stream.get();
 
         while (true) {
@@ -1307,7 +1299,7 @@ namespace Compiler {
     unique_ptr<StatementOpenScope> getStatementsOpenScope(TokenStream& stream, shared_ptr<NameTable>& parentNameTable) {
         auto scope = make_unique<StatementOpenScope>(parentNameTable, true);
 
-        assert_token<TokenSymbol>(stream.get(), '{', CompileException(stream, "expected {"));
+        assert_token<TokenSymbol, CompileException>(stream.get(), '{', stream, "expected {");
 
         while (true) {
             if (stream.eof()) {
@@ -1341,9 +1333,9 @@ namespace Compiler {
         if (stream.peek() == '[') {
             stream.get();
             auto expr = getExpression(stream, *nameTable);
-            assert(typeis<FactorValue>(*expr));
+            assert_throw<CompileException>(typeis<FactorValue>(*expr), stream, "expected value");
             length = dynamic_cast<const FactorValue&>(*expr).get();
-            assert(dynamic_cast<const TokenSymbol&>(stream.get()) == ']');
+            assert_token<TokenSymbol, CompileException>(stream.get(), ']', stream, "expected ]");
         }
         const NameEntry& entry = nameTable->trymakeVariableAddr(varName.str(), length);
         // initialization
@@ -1370,7 +1362,7 @@ namespace Compiler {
 
     unique_ptr<StatementLetInit> getStatementLet(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
         stream.get(); // assert_token<TokenKeyword>(stream.get(), "let", CompileException(stream, "expected let"));
-        assert_token<TokenSymbol>(stream.get(), ':', CompileException(stream, "expected :"));
+        assert_token<TokenSymbol, CompileException>(stream.get(), ':', stream, "expected :");
 
         StatementLetInit letinit;
 
@@ -1388,20 +1380,20 @@ namespace Compiler {
 
     unique_ptr<StatementFunction> getStatementFunction(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
         stream.get(); // assert(dynamic_cast<const TokenKeyword&>(stream.get()) == "func");
-        assert_token<TokenSymbol>(stream.get(), ':', CompileException(stream, "expected :"));
+        assert_token<TokenSymbol, CompileException>(stream.get(), ':', stream, "expected :");
         auto& funcName = dynamic_cast<const TokenKeyword&>(stream.get());
         if (nameTable->includeLocal(funcName.str()) ||
             reservedNameTable.include(funcName.str())) {
             throw CompileException();
         }
 
-        assert_token<TokenSymbol>(stream.get(), '(', CompileException(stream, "expected ("));
+        assert_token<TokenSymbol, CompileException>(stream.get(), '(', stream, "expected (");
 
 
         list<string> argStrs;
 
         for (bool first = true;; first = false) {
-            assert(!stream.eof());
+            assert_throw<CompileException>(!stream.eof(), stream, "expected )");
             auto& token = stream.get();
 
             if (token == ')') {
@@ -1409,7 +1401,7 @@ namespace Compiler {
                 break;
             }
 
-            assert(typeis<TokenKeyword>(token));
+            assert_throw<CompileException>(typeis<TokenKeyword>(token), stream, "expected argument");
             // let
             auto& varName = dynamic_cast<const TokenKeyword&>(token);
             if (nameTable->includeLocal(funcName.str()) ||
@@ -1443,29 +1435,30 @@ namespace Compiler {
 
     unique_ptr<StatementWhile> getStatementWhile(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
         stream.get(); // assert(dynamic_cast<const TokenKeyword&>(stream.get()) == "while");
-        assert_token<TokenSymbol>(stream.get(), '(', CompileException(stream, "expected ("));
+        assert_token<TokenSymbol, CompileException>(stream.get(), '(', stream, "expected (");
         auto&& condition = getExpression(stream, *nameTable);
-        assert_token<TokenSymbol>(stream.get(), ')', CompileException(stream, "expected )"));
+        assert_token<TokenSymbol, CompileException>(stream.get(), ')', stream, "expected )");
         auto label = nameTable->reserveLabelAddr(2);
         return make_unique<StatementWhile>(move(*getStatementsOpenScope(stream, nameTable)), move(condition), label);
     }
 
 
     unique_ptr<StatementIf> getStatementElse(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
-        assert(dynamic_cast<const TokenKeyword&>(stream.get()) == "else");
+        stream.get(); // assert_token<TokenKeyword, CompileException>(stream.get(), "else", stream, "expected else");
         auto label = nameTable->reserveLabelAddr(2);
         return make_unique<StatementIf>(move(*getStatementsOpenScope(stream, nameTable)), label);
     }
 
 
     unique_ptr<StatementIf> getStatementIf(TokenStream& stream, shared_ptr<NameTable>& nameTable, bool elsif) {
-        if (elsif)
-            assert(dynamic_cast<const TokenKeyword&>(stream.get()) == "elsif");
-        else
-            assert(dynamic_cast<const TokenKeyword&>(stream.get()) == "if");
-        assert_token<TokenSymbol>(stream.get(), '(', CompileException(stream, "expected ("));
+        stream.get();
+        // if (elsif)
+        //     assert_token<TokenKeyword, CompileException>(stream.get(), "elsif", stream, "expected elsif");
+        // else
+        //     assert_token<TokenKeyword, CompileException>(stream.get(), "if", stream, "expected if");
+        assert_token<TokenSymbol, CompileException>(stream.get(), '(', stream, "expected (");
         auto&& condition = getExpression(stream, *nameTable);
-        assert_token<TokenSymbol>(stream.get(), ')', CompileException(stream, "expected )"));
+        assert_token<TokenSymbol, CompileException>(stream.get(), ')', stream, "expected )");
         auto label = nameTable->reserveLabelAddr(2);
         auto ifscope = make_unique<StatementIf>(move(*getStatementsOpenScope(stream, nameTable)), move(condition), label);
 
@@ -1486,15 +1479,15 @@ namespace Compiler {
 
 
     unique_ptr<StatementReturn> getStatementReturn(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
-        assert(dynamic_cast<const TokenKeyword&>(stream.get()) == "return");
+        stream.get(); // assert_token<TokenKeyword, CompileException>(stream.get(), "return", stream, "expected return");
 
-        assert(typeis<TokenSymbol>(stream.peek()));
+        assert_throw<CompileException>(typeis<TokenSymbol>(stream.peek()), stream, "expected )");
         auto& token = static_cast<const TokenSymbol&>(stream.peek());
 
         if (token == ':') {
             stream.get();
             auto&& expr = getExpression(stream, *nameTable);
-            assert_token<TokenSymbol>(stream.get(), ';', CompileException(stream, "expected ;"));
+            assert_token<TokenSymbol, CompileException>(stream.get(), ';', stream, "expected ;");
             return make_unique<StatementReturn>(move(expr));
         }
         else if (token == ';') {
@@ -1544,7 +1537,7 @@ namespace Compiler {
         }
 
         auto&& p = getExpression(stream, *nameTable);
-        assert_token<TokenSymbol>(stream.get(), ';', CompileException(stream, "expected ;"));
+        assert_token<TokenSymbol, CompileException>(stream.get(), ';', stream, "expected ;");
         return move(p);
 
     }
