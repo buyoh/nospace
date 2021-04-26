@@ -1,5 +1,11 @@
 #pragma GCC optimize ("O3")
-#include "bits/stdc++.h"
+#include <string>
+#include <list>
+#include <vector>
+#include <unordered_map>
+#include <iostream>
+#include <sstream>
+#include <cassert>
 
 
 using namespace std;
