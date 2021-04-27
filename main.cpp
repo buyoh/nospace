@@ -1,12 +1,12 @@
-#pragma GCC optimize ("O3")
-#include <string>
-#include <list>
-#include <vector>
-#include <unordered_map>
-#include <iostream>
-#include <sstream>
 #include <cassert>
-
+#include <cstring>
+#include <iostream>
+#include <list>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 using namespace std;
 using integer = int64_t;
@@ -193,7 +193,7 @@ namespace Parser {
             try {
                 return operator==(dynamic_cast<const TokenInteger&>(t));
             }
-            catch (bad_cast) {
+            catch (const bad_cast& _) {
                 return false;
             }
         }
@@ -223,7 +223,7 @@ namespace Parser {
             try {
                 return operator==(dynamic_cast<const TokenKeyword&>(t));
             }
-            catch (bad_cast) {
+            catch (const bad_cast& _) {
                 return false;
             }
         }
@@ -253,7 +253,7 @@ namespace Parser {
             try {
                 return operator==(dynamic_cast<const TokenSymbol&>(t));
             }
-            catch (bad_cast) {
+            catch (const bad_cast& _) {
                 return false;
             }
         }
@@ -772,7 +772,7 @@ namespace Compiler {
                         }
                         assert_token<TokenSymbol, CompileException>(stream.get(), ')', stream, "expected )");
                     }
-                    catch (bad_cast) {
+                    catch (const bad_cast& _) {
                         throw CompileException(stream, "invalid function call syntax");
                     }
                     return make_unique<Operation>(move(exps));
@@ -2022,7 +2022,7 @@ namespace Builder {
             convertValue(whitesp, dynamic_cast<const Factor&>(exps));
             return whitesp;
         }
-        catch (bad_cast) {}
+        catch (const bad_cast& _) {}
 
         throw OperatorException();
     }
@@ -2258,7 +2258,7 @@ namespace Builder {
             whitesp.push(Instruments::Stack::discard);
             return whitesp;
         }
-        catch (bad_cast) {}
+        catch (const bad_cast& _) {}
 
         throw GenerationException();
     }
