@@ -243,13 +243,13 @@ namespace Parser {
         inline bool operator==(const TokenSymbol& t) const {
             return strcmp(_symbol, t._symbol) == 0;
         }
-        inline bool operator==(char c) const {
+        inline bool operator==(char c) const override {
             return _symbol[0] == c && _symbol[1] == 0;
         }
-        inline bool operator==(const string& str) const {
+        inline bool operator==(const string& str) const override {
             return _symbol == str;
         }
-        inline bool operator==(const Token& t) const {
+        inline bool operator==(const Token& t) const override {
             try {
                 return operator==(dynamic_cast<const TokenSymbol&>(t));
             }
@@ -266,7 +266,7 @@ namespace Parser {
 
     inline bool isValidSymbol(char c) {
         static bool f[] = { 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0 };
-        return (32 <= c && c < 128) ? f[c - 32] : false;
+        return 32 <= c ? f[c - 32] : false;
     }
 
 
@@ -1565,7 +1565,6 @@ namespace Builder {
     namespace Alignment {
         // 諸操作に必要なHeap領域．
         // [0][reserved][localBegin][localEnd][calc][calc][calc][calc]
-        const integer ReservedHeapSize = 8;
         const integer LocalHeapBegin = 2;
         const integer LocalHeapEnd = 3;
         const integer TempPtr = 4;
