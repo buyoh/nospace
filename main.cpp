@@ -490,7 +490,7 @@ namespace Compiler {
     public:
         NameEntry(const string& _name, integer _addr)
             :name_(_name), addr_(_addr) { }
-        ~NameEntry() {}
+        virtual ~NameEntry() {}
 
         virtual inline const string& name() const { return name_; }
         virtual inline integer address() const { return addr_; }
