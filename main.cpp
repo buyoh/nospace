@@ -1,6 +1,12 @@
-#pragma GCC optimize ("O3")
-#include "bits/stdc++.h"
-
+#include <cassert>
+#include <cstring>
+#include <iostream>
+#include <list>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <unordered_map>
+#include <vector>
 
 using namespace std;
 using integer = int64_t;
@@ -187,7 +193,7 @@ namespace Parser {
             try {
                 return operator==(dynamic_cast<const TokenInteger&>(t));
             }
-            catch (bad_cast) {
+            catch (const bad_cast& _) {
                 return false;
             }
         }
@@ -217,7 +223,7 @@ namespace Parser {
             try {
                 return operator==(dynamic_cast<const TokenKeyword&>(t));
             }
-            catch (bad_cast) {
+            catch (const bad_cast& _) {
                 return false;
             }
         }
@@ -237,17 +243,17 @@ namespace Parser {
         inline bool operator==(const TokenSymbol& t) const {
             return strcmp(_symbol, t._symbol) == 0;
         }
-        inline bool operator==(char c) const {
+        inline bool operator==(char c) const override {
             return _symbol[0] == c && _symbol[1] == 0;
         }
-        inline bool operator==(const string& str) const {
+        inline bool operator==(const string& str) const override {
             return _symbol == str;
         }
-        inline bool operator==(const Token& t) const {
+        inline bool operator==(const Token& t) const override {
             try {
                 return operator==(dynamic_cast<const TokenSymbol&>(t));
             }
-            catch (bad_cast) {
+            catch (const bad_cast& _) {
                 return false;
             }
         }
@@ -260,7 +266,7 @@ namespace Parser {
 
     inline bool isValidSymbol(char c) {
         static bool f[] = { 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0 };
-        return (32 <= c && c < 128) ? f[c - 32] : false;
+        return 32 <= c ? f[c - 32] : false;
     }
 
 
@@ -374,7 +380,7 @@ namespace Parser {
             }
             is.get(); // ignore
         }
-        return move(tokens);
+        return tokens;
     }
 
 }
@@ -484,7 +490,7 @@ namespace Compiler {
     public:
         NameEntry(const string& _name, integer _addr)
             :name_(_name), addr_(_addr) { }
-        ~NameEntry() {}
+        virtual ~NameEntry() {}
 
         virtual inline const string& name() const { return name_; }
         virtual inline integer address() const { return addr_; }
@@ -760,13 +766,13 @@ namespace Compiler {
                         stream.get();
                         assert_token<TokenSymbol, CompileException>(stream.get(), '(', stream, "expected (");
                         for (int i = 0; i < funcEntry.argLength(); ++i) {
-                            exps.args(i) = move(getExpression(stream, nameTable));
+                            exps.args(i) = getExpression(stream, nameTable);
                             if (i + 1 < funcEntry.argLength())
                                 assert_token<TokenSymbol, CompileException>(stream.get(), ',', stream, "expected ,");
                         }
                         assert_token<TokenSymbol, CompileException>(stream.get(), ')', stream, "expected )");
                     }
-                    catch (bad_cast) {
+                    catch (const bad_cast& _) {
                         throw CompileException(stream, "invalid function call syntax");
                     }
                     return make_unique<Operation>(move(exps));
@@ -792,7 +798,7 @@ namespace Compiler {
                     assert_token<TokenSymbol, CompileException>(stream.get(), '(', stream, "expected (");
 
                     for (int i = 0; i < funcEntry.argLength(); ++i) {
-                        exps.args(i) = move(getExpression(stream, nameTable));
+                        exps.args(i) = getExpression(stream, nameTable);
                         if (i + 1 < funcEntry.argLength())
                             assert_token<TokenSymbol, CompileException>(stream.get(), ',', stream, "expected ,");
                     }
@@ -819,7 +825,7 @@ namespace Compiler {
                 stream.get();
                 auto exps = getExpression(stream, nameTable);
 
-                if (stream.get() == ")") return move(exps);
+                if (stream.get() == ")") return exps;
                 throw CompileException(stream, "expected )");
             }
             else if (tokenSymbol == '&') {
@@ -854,7 +860,7 @@ namespace Compiler {
                 if (typeis<FactorValue>(*stV)) {
                     // optimization
                     static_cast<FactorValue&>(*stV).get() *= -1;
-                    return move(stV);
+                    return stV;
                 }
                 else {
                     Operation stOp(Embedded::Function::IDaminus, 1);
@@ -871,12 +877,12 @@ namespace Compiler {
                     if (stvRef.id() == Embedded::Function::IDnot) {
                         // optimization
                         static_cast<Operation&>(*stV).id() = Embedded::Function::IDnotnot;
-                        return move(stV);
+                        return stV;
                     }
                     else if (stvRef.id() == Embedded::Function::IDnotnot) {
                         // optimization(`!!!`)
                         static_cast<Operation&>(*stV).id() = Embedded::Function::IDnot;
-                        return move(stV);
+                        return stV;
                     }
                 }
 
@@ -949,7 +955,7 @@ namespace Compiler {
         unique_ptr<Expression> root;
         unique_ptr<Expression>* curr = &root;
 
-        *curr = move(getExpressionIndexer(stream, nameTable));
+        *curr = getExpressionIndexer(stream, nameTable);
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
@@ -974,7 +980,7 @@ namespace Compiler {
             else {
                 throw CompileException(stream, "syntax error");
             }
-            *curr = move(getExpressionIndexer(stream, nameTable));
+            *curr = getExpressionIndexer(stream, nameTable);
         }
         return root;
     }
@@ -984,7 +990,7 @@ namespace Compiler {
         unique_ptr<Expression> root;
         unique_ptr<Expression>* curr = &root;
 
-        *curr = move(getExpressionMul(stream, nameTable));
+        *curr = getExpressionMul(stream, nameTable);
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
@@ -1009,7 +1015,7 @@ namespace Compiler {
             else {
                 throw CompileException(stream, "syntax error");
             }
-            *curr = move(getExpressionMul(stream, nameTable));
+            *curr = getExpressionMul(stream, nameTable);
         }
         return root;
     }
@@ -1019,7 +1025,7 @@ namespace Compiler {
         unique_ptr<Expression> root;
         unique_ptr<Expression>* curr = &root;
 
-        *curr = move(getExpressionPls(stream, nameTable));
+        *curr = getExpressionPls(stream, nameTable);
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
@@ -1066,7 +1072,7 @@ namespace Compiler {
             else {
                 throw CompileException(stream, "syntax error");
             }
-            *curr = move(getExpressionPls(stream, nameTable));
+            *curr = getExpressionPls(stream, nameTable);
         }
         return root;
     }
@@ -1076,7 +1082,7 @@ namespace Compiler {
         unique_ptr<Expression> root;
         unique_ptr<Expression>* curr = &root;
 
-        *curr = move(getExpressionComp(stream, nameTable));
+        *curr = getExpressionComp(stream, nameTable);
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
@@ -1107,7 +1113,7 @@ namespace Compiler {
             else {
                 throw CompileException(stream, "syntax error");
             }
-            *curr = move(getExpressionComp(stream, nameTable));
+            *curr = getExpressionComp(stream, nameTable);
         }
         return root;
     }
@@ -1117,7 +1123,7 @@ namespace Compiler {
         unique_ptr<Expression> root;
         unique_ptr<Expression>* curr = &root;
 
-        *curr = move(getExpressionLogi(stream, nameTable));
+        *curr = getExpressionLogi(stream, nameTable);
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
@@ -1163,7 +1169,7 @@ namespace Compiler {
             else {
                 throw CompileException(stream, "syntax error");
             }
-            *curr = move(getExpressionLogi(stream, nameTable));
+            *curr = getExpressionLogi(stream, nameTable);
         }
         return root;
     }
@@ -1349,7 +1355,7 @@ namespace Compiler {
                 }
                 if (cnt >= length) throw CompileException(stream, "too many expressions");
 
-                letinit.assignments.emplace_back(entry.address() + cnt, move(getExpression(stream, *nameTable)));
+                letinit.assignments.emplace_back(entry.address() + cnt, getExpression(stream, *nameTable));
 
                 auto& term = stream.get();
                 if (term == ',') continue;
@@ -1466,15 +1472,15 @@ namespace Compiler {
         if (typeis<TokenKeyword>(token)) {
             if (token == "elsif") {
                 ifscope->elsif = getStatementIf(stream, nameTable, true);
-                return move(ifscope);
+                return ifscope;
             }
             else if (token == "else") {
                 ifscope->elsif = getStatementElse(stream, nameTable);
-                return move(ifscope);
+                return ifscope;
             }
         }
 
-        return move(ifscope);
+        return ifscope;
     }
 
 
@@ -1559,7 +1565,6 @@ namespace Builder {
     namespace Alignment {
         // 諸操作に必要なHeap領域．
         // [0][reserved][localBegin][localEnd][calc][calc][calc][calc]
-        const integer ReservedHeapSize = 8;
         const integer LocalHeapBegin = 2;
         const integer LocalHeapEnd = 3;
         const integer TempPtr = 4;
@@ -1599,7 +1604,7 @@ namespace Builder {
 
 
     // WhiteSpace& convertSwap(WhiteSpace& whitesp, integer destPtr, integer fromPtr) {
-    // 
+    //
     // }
 
 
@@ -2017,7 +2022,7 @@ namespace Builder {
             convertValue(whitesp, dynamic_cast<const Factor&>(exps));
             return whitesp;
         }
-        catch (bad_cast) {}
+        catch (const bad_cast& _) {}
 
         throw OperatorException();
     }
@@ -2253,7 +2258,7 @@ namespace Builder {
             whitesp.push(Instruments::Stack::discard);
             return whitesp;
         }
-        catch (bad_cast) {}
+        catch (const bad_cast& _) {}
 
         throw GenerationException();
     }
