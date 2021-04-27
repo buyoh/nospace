@@ -380,7 +380,7 @@ namespace Parser {
             }
             is.get(); // ignore
         }
-        return move(tokens);
+        return tokens;
     }
 
 }
@@ -766,7 +766,7 @@ namespace Compiler {
                         stream.get();
                         assert_token<TokenSymbol, CompileException>(stream.get(), '(', stream, "expected (");
                         for (int i = 0; i < funcEntry.argLength(); ++i) {
-                            exps.args(i) = move(getExpression(stream, nameTable));
+                            exps.args(i) = getExpression(stream, nameTable);
                             if (i + 1 < funcEntry.argLength())
                                 assert_token<TokenSymbol, CompileException>(stream.get(), ',', stream, "expected ,");
                         }
@@ -798,7 +798,7 @@ namespace Compiler {
                     assert_token<TokenSymbol, CompileException>(stream.get(), '(', stream, "expected (");
 
                     for (int i = 0; i < funcEntry.argLength(); ++i) {
-                        exps.args(i) = move(getExpression(stream, nameTable));
+                        exps.args(i) = getExpression(stream, nameTable);
                         if (i + 1 < funcEntry.argLength())
                             assert_token<TokenSymbol, CompileException>(stream.get(), ',', stream, "expected ,");
                     }
@@ -825,7 +825,7 @@ namespace Compiler {
                 stream.get();
                 auto exps = getExpression(stream, nameTable);
 
-                if (stream.get() == ")") return move(exps);
+                if (stream.get() == ")") return exps;
                 throw CompileException(stream, "expected )");
             }
             else if (tokenSymbol == '&') {
@@ -860,7 +860,7 @@ namespace Compiler {
                 if (typeis<FactorValue>(*stV)) {
                     // optimization
                     static_cast<FactorValue&>(*stV).get() *= -1;
-                    return move(stV);
+                    return stV;
                 }
                 else {
                     Operation stOp(Embedded::Function::IDaminus, 1);
@@ -877,12 +877,12 @@ namespace Compiler {
                     if (stvRef.id() == Embedded::Function::IDnot) {
                         // optimization
                         static_cast<Operation&>(*stV).id() = Embedded::Function::IDnotnot;
-                        return move(stV);
+                        return stV;
                     }
                     else if (stvRef.id() == Embedded::Function::IDnotnot) {
                         // optimization(`!!!`)
                         static_cast<Operation&>(*stV).id() = Embedded::Function::IDnot;
-                        return move(stV);
+                        return stV;
                     }
                 }
 
@@ -955,7 +955,7 @@ namespace Compiler {
         unique_ptr<Expression> root;
         unique_ptr<Expression>* curr = &root;
 
-        *curr = move(getExpressionIndexer(stream, nameTable));
+        *curr = getExpressionIndexer(stream, nameTable);
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
@@ -980,7 +980,7 @@ namespace Compiler {
             else {
                 throw CompileException(stream, "syntax error");
             }
-            *curr = move(getExpressionIndexer(stream, nameTable));
+            *curr = getExpressionIndexer(stream, nameTable);
         }
         return root;
     }
@@ -990,7 +990,7 @@ namespace Compiler {
         unique_ptr<Expression> root;
         unique_ptr<Expression>* curr = &root;
 
-        *curr = move(getExpressionMul(stream, nameTable));
+        *curr = getExpressionMul(stream, nameTable);
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
@@ -1015,7 +1015,7 @@ namespace Compiler {
             else {
                 throw CompileException(stream, "syntax error");
             }
-            *curr = move(getExpressionMul(stream, nameTable));
+            *curr = getExpressionMul(stream, nameTable);
         }
         return root;
     }
@@ -1025,7 +1025,7 @@ namespace Compiler {
         unique_ptr<Expression> root;
         unique_ptr<Expression>* curr = &root;
 
-        *curr = move(getExpressionPls(stream, nameTable));
+        *curr = getExpressionPls(stream, nameTable);
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
@@ -1072,7 +1072,7 @@ namespace Compiler {
             else {
                 throw CompileException(stream, "syntax error");
             }
-            *curr = move(getExpressionPls(stream, nameTable));
+            *curr = getExpressionPls(stream, nameTable);
         }
         return root;
     }
@@ -1082,7 +1082,7 @@ namespace Compiler {
         unique_ptr<Expression> root;
         unique_ptr<Expression>* curr = &root;
 
-        *curr = move(getExpressionComp(stream, nameTable));
+        *curr = getExpressionComp(stream, nameTable);
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
@@ -1113,7 +1113,7 @@ namespace Compiler {
             else {
                 throw CompileException(stream, "syntax error");
             }
-            *curr = move(getExpressionComp(stream, nameTable));
+            *curr = getExpressionComp(stream, nameTable);
         }
         return root;
     }
@@ -1123,7 +1123,7 @@ namespace Compiler {
         unique_ptr<Expression> root;
         unique_ptr<Expression>* curr = &root;
 
-        *curr = move(getExpressionLogi(stream, nameTable));
+        *curr = getExpressionLogi(stream, nameTable);
 
         while (!stream.eof()) {
             const Token& token = stream.peek();
@@ -1169,7 +1169,7 @@ namespace Compiler {
             else {
                 throw CompileException(stream, "syntax error");
             }
-            *curr = move(getExpressionLogi(stream, nameTable));
+            *curr = getExpressionLogi(stream, nameTable);
         }
         return root;
     }
@@ -1355,7 +1355,7 @@ namespace Compiler {
                 }
                 if (cnt >= length) throw CompileException(stream, "too many expressions");
 
-                letinit.assignments.emplace_back(entry.address() + cnt, move(getExpression(stream, *nameTable)));
+                letinit.assignments.emplace_back(entry.address() + cnt, getExpression(stream, *nameTable));
 
                 auto& term = stream.get();
                 if (term == ',') continue;
@@ -1472,15 +1472,15 @@ namespace Compiler {
         if (typeis<TokenKeyword>(token)) {
             if (token == "elsif") {
                 ifscope->elsif = getStatementIf(stream, nameTable, true);
-                return move(ifscope);
+                return ifscope;
             }
             else if (token == "else") {
                 ifscope->elsif = getStatementElse(stream, nameTable);
-                return move(ifscope);
+                return ifscope;
             }
         }
 
-        return move(ifscope);
+        return ifscope;
     }
 
 
@@ -1604,7 +1604,7 @@ namespace Builder {
 
 
     // WhiteSpace& convertSwap(WhiteSpace& whitesp, integer destPtr, integer fromPtr) {
-    // 
+    //
     // }
 
 
