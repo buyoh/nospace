@@ -72,8 +72,10 @@ namespace WS {
         namespace Stack {
             const Chr push[] = { Chr::SP, Chr::SP }; // prm
             const Chr duplicate[] = { Chr::SP, Chr::LF, Chr::SP };
+            const Chr copy[] = { Chr::SP, Chr::TB, Chr::SP }; // prm
             const Chr swap[] = { Chr::SP, Chr::LF, Chr::TB };
             const Chr discard[] = { Chr::SP, Chr::LF, Chr::LF };
+            const Chr slide[] = { Chr::SP, Chr::TB, Chr::LF }; // prm
         }
         namespace Arithmetic {
             const Chr add[] = { Chr::TB, Chr::SP, Chr::SP, Chr::SP };
@@ -929,11 +931,11 @@ namespace Compiler {
                 return stOp;
             }
             else if (typeis<Operation>(*stV)) {
-                // derefference
+                // dereference
                 auto& o = static_cast<Operation&>(*stV);
                 assert_throw<CompileException>(
                     o.id() == Embedded::Function::IDdereference,
-                    stream, "must be a derefference or a variable");
+                    stream, "must be a dereference or a variable");
                 auto stOp = make_unique<Operation>(Embedded::Function::IDindexer, 2);
                 stOp->args(0) = move(o.args(0));
                 stOp->args(1) = move(index);
@@ -1709,7 +1711,7 @@ namespace Builder {
             const auto& var = static_cast<const FactorVariable&>(factor);
             // calculate addr
             convertCalculateLocalVariablePtr(whitesp, var);
-            // retirieve
+            // retrieve
             whitesp.push(Instruments::Heap::retrieve);
             return whitesp;
         }
