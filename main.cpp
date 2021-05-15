@@ -1613,11 +1613,10 @@ namespace Builder {
     // *destPtr = *fromPtr
     WhiteSpace& convertCopy(WhiteSpace& whitesp, integer destPtr, integer fromPtr) {
         whitesp.push(Instruments::Stack::push);
+        pushInteger(whitesp, integer(destPtr));
+        whitesp.push(Instruments::Stack::push);
         pushInteger(whitesp, integer(fromPtr));
         whitesp.push(Instruments::Heap::retrieve);
-        whitesp.push(Instruments::Stack::push);
-        pushInteger(whitesp, integer(destPtr));
-        whitesp.push(Instruments::Stack::swap);
         whitesp.push(Instruments::Heap::store);
         return whitesp;
     }
@@ -1635,20 +1634,18 @@ namespace Builder {
         // - local_begin := local_end．(dup local_end)
         whitesp.push(Instruments::Stack::push);
         pushInteger(whitesp, Alignment::LocalHeapEnd);
+        whitesp.push(Instruments::Stack::duplicate);
         whitesp.push(Instruments::Heap::retrieve);
-        whitesp.push(Instruments::Stack::duplicate); // dup!
         whitesp.push(Instruments::Stack::push);
         pushInteger(whitesp, Alignment::LocalHeapBegin);
-        whitesp.push(Instruments::Stack::swap);
+        whitesp.push(Instruments::Stack::copy); // retrieve local_end
+        pushInteger(whitesp, integer(1));
         whitesp.push(Instruments::Heap::store);
         // remain local_begin value on stack.
         // - local_end := local_begin(stacked by dup) + scopesize．
         whitesp.push(Instruments::Stack::push);
         pushInteger(whitesp, func.nameTable->localHeapSize());
         whitesp.push(Instruments::Arithmetic::add);
-        whitesp.push(Instruments::Stack::push);
-        pushInteger(whitesp, Alignment::LocalHeapEnd);
-        whitesp.push(Instruments::Stack::swap);
         whitesp.push(Instruments::Heap::store);
         return whitesp;
     }
@@ -1786,9 +1783,8 @@ namespace Builder {
             pushInteger(whitesp, integer(1)); // neg
             whitesp.push(Instruments::Stack::push);
             pushInteger(whitesp, integer(0)); // notneg
-            convertExpression(whitesp, exps[0]);
             convertExpression(whitesp, exps[1]);
-            whitesp.push(Instruments::Stack::swap);
+            convertExpression(whitesp, exps[0]);
             whitesp.push(Instruments::Arithmetic::sub);
 
             whitesp.push(Instruments::Flow::call);
@@ -1800,9 +1796,8 @@ namespace Builder {
             pushInteger(whitesp, integer(0)); // neg
             whitesp.push(Instruments::Stack::push);
             pushInteger(whitesp, integer(1)); // notneg
-            convertExpression(whitesp, exps[0]);
             convertExpression(whitesp, exps[1]);
-            whitesp.push(Instruments::Stack::swap);
+            convertExpression(whitesp, exps[0]);
             whitesp.push(Instruments::Arithmetic::sub);
 
             whitesp.push(Instruments::Flow::call);
@@ -2159,9 +2154,8 @@ namespace Builder {
                 return whitesp;
             }
             case Embedded::Function::IDlesseq: {
-                convertExpression(whitesp, op[0]);
                 convertExpression(whitesp, op[1]);
-                whitesp.push(Instruments::Stack::swap);
+                convertExpression(whitesp, op[0]);
                 whitesp.push(Instruments::Arithmetic::sub);
                 whitesp.push(Instruments::Flow::negativejump);
                 pushInteger(whitesp, label + 1);
