@@ -6,7 +6,7 @@ def compile(path_in, path_out)
 end
 
 def vm_exec(path_code, path_stdin)
-    system("ruby vm/run.rb #{path_code} #{path_stdin} 1> temp/runstdout.log 2> temp/runstderr.log") 
+    system("ruby ./vm/run.rb #{path_code} #{path_stdin} 1> ./temp/runstdout.log 2> ./temp/runstderr.log") 
 end
 
 arg_skip = 0

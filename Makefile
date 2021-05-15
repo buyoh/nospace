@@ -6,7 +6,7 @@ debug: maicomp
 release: CXXFLAGS := -O3
 release: maicomp
 
-maicomp:
+maicomp: main.cpp
 	g++ -std=c++17 $(CXXFLAGS) main.cpp -o maicomp
 
 clean:

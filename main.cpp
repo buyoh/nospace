@@ -75,7 +75,7 @@ namespace WS {
             const Chr copy[] = { Chr::SP, Chr::TB, Chr::SP }; // prm
             const Chr swap[] = { Chr::SP, Chr::LF, Chr::TB };
             const Chr discard[] = { Chr::SP, Chr::LF, Chr::LF };
-            const Chr slide[] = { Chr::SP, Chr::TB, Chr::LF }; // prm
+            // const Chr slide[] = { Chr::SP, Chr::TB, Chr::LF }; // prm
         }
         namespace Arithmetic {
             const Chr add[] = { Chr::TB, Chr::SP, Chr::SP, Chr::SP };
@@ -317,10 +317,11 @@ namespace Parser {
         is.get(); // '
 
         integer var = 0;
-        int cc = is.peek();
+        int cc;
         bool escape = false;
 
         while (cc = is.get(), escape || cc != '\'') {
+            if (is.eof()) throw ParseException("missing [']");
             if (!escape) {
                 if (cc == '\\') escape = true;
                 else var = (var << 8ll) | integer(cc);
@@ -334,7 +335,6 @@ namespace Parser {
                 else throw ParseException("unknown escape char");
                 escape = false;
             }
-            if (is.eof()) throw ParseException("missing [']");
         }
 
         return TokenInteger(var);
@@ -358,29 +358,22 @@ namespace Parser {
 
             if (cc == '#') {
                 parseLineCommentOut(is);
-                continue;
             }
-
-            if (isspace(cc)) {
+            else if (isspace(cc)) {
                 is.get();
-                continue;
             }
-            if (isdigit(cc)) {
+            else if (isdigit(cc)) {
                 tokens.emplace_back(new TokenInteger(parseInteger(is)));
-                continue;
             }
-            if (isalpha(cc) || cc == '_') {
+            else if (isalpha(cc) || cc == '_') {
                 tokens.emplace_back(new TokenKeyword(parseKeyword(is)));
-                continue;
             }
-            if (cc == '\'') {
+            else if (cc == '\'') {
                 tokens.emplace_back(new TokenInteger(parseChar(is)));
             }
-            if (isValidSymbol(cc)) {
+            else if (isValidSymbol(cc)) {
                 tokens.emplace_back(new TokenSymbol(parseSymbol(is)));
-                continue;
             }
-            is.get(); // ignore
         }
         return tokens;
     }
@@ -1197,8 +1190,6 @@ namespace Compiler {
 
         StatementScope(shared_ptr<NameTable>& _nameTable) :nameTable(_nameTable), statements() { }
         StatementScope(shared_ptr<NameTable>&& _nameTable) :nameTable(move(_nameTable)), statements() { }
-
-
     };
 
 
