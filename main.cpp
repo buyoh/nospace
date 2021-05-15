@@ -1945,18 +1945,16 @@ namespace Builder {
         case Embedded::Function::IDgeti: {
             whitesp.push(Instruments::Stack::push);
             pushInteger(whitesp, Alignment::TempPtr);
+            whitesp.push(Instruments::Stack::duplicate);
             whitesp.push(Instruments::IO::getnumber);
-            whitesp.push(Instruments::Stack::push);
-            pushInteger(whitesp, Alignment::TempPtr);
             whitesp.push(Instruments::Heap::retrieve);
             return whitesp;
         }
         case Embedded::Function::IDgetc: {
             whitesp.push(Instruments::Stack::push);
             pushInteger(whitesp, Alignment::TempPtr);
+            whitesp.push(Instruments::Stack::duplicate);
             whitesp.push(Instruments::IO::getchar);
-            whitesp.push(Instruments::Stack::push);
-            pushInteger(whitesp, Alignment::TempPtr);
             whitesp.push(Instruments::Heap::retrieve);
             return whitesp;
         }
