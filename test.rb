@@ -1,6 +1,6 @@
 
 def compile(path_in, path_out)
-    system "./maicomp < #{path_in} 1> #{path_out} 2> ./temp/cmpstderr.log"
+    system "./maicomp #{path_in} 1> #{path_out} 2> ./temp/cmpstderr.log"
     abort "failed: compilation" if $? != 0
     true
 end

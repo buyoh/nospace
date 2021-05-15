@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <list>
 #include <memory>
@@ -2380,7 +2381,15 @@ int main(int argc, char** argv) {
 
     // analysis
 
-    TokenStream tokenStream(parseToTokens(cin));
+    TokenStream tokenStream;
+    if (argc > 1) {
+        fstream file(argv[1]);
+        tokenStream = parseToTokens(file);
+        file.close();
+    }
+    else {
+        tokenStream = parseToTokens(cin);
+    }
 
     auto dmy = make_shared<NameTable>();
     StatementScope globalScope = move(*getStatementsScope(tokenStream, dmy, true));
