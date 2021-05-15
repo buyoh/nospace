@@ -266,13 +266,6 @@ namespace Parser {
     };
 
 
-    inline bool isValidSymbol(char c) {
-        // BUG: includes "
-        static bool f[] = { 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0 };
-        return 32 <= c ? f[c - 32] : false;
-    }
-
-
     TokenInteger parseInteger(istream& is) {
         integer var = 0;
         int cc = is.peek();
@@ -296,21 +289,25 @@ namespace Parser {
         int c1 = is.get();
         int c2 = is.peek();
 
-        if (c1 == '|') {
-            // BUG: allows |
-            if (c2 == '|') { is.get(); return TokenSymbol('|', '|'); }
+        if (c1 == '|' && c2 == '|') {
+            is.get(); return TokenSymbol('|', '|');
         }
         if (c1 == '&') {
             if (c2 == '&') { is.get(); return TokenSymbol('&', '&'); }
+            return TokenSymbol('&');
         }
-        if (c2 == '=') {
-            if (c1 == '+' || c1 == '-' || c1 == '*' || c1 == '/' || c1 == '%' ||
-                c1 == '=' || c1 == '!' || c1 == '<' || c1 == '>') {
+        if (c1 == '+' || c1 == '-' || c1 == '*' || c1 == '/' || c1 == '%' ||
+            c1 == '=' || c1 == '!' || c1 == '<' || c1 == '>') {
+            if (c2 == '=') {
                 is.get(); return TokenSymbol(c1, '=');
             }
+            return TokenSymbol(c1);
         }
-
-        return TokenSymbol(c1);
+        if (c1 == '(' || c1 == ')' || c1 == '[' || c1 == ']' ||
+            c1 == '{' || c1 == '}' || c1 == ':' || c1 == ';' || c1 == ',') {
+            return TokenSymbol(c1);
+        }
+        throw ParseException("invalid symbol");
     }
 
 
@@ -355,8 +352,11 @@ namespace Parser {
         vector<unique_ptr<Token>> tokens;
         tokens.reserve(24);
 
-        while (!is.eof()) {
+        while (true) {
             int cc = is.peek();
+            if (is.eof()) {
+                break;
+            }
 
             if (cc == '#') {
                 parseLineCommentOut(is);
@@ -373,7 +373,7 @@ namespace Parser {
             else if (cc == '\'') {
                 tokens.emplace_back(new TokenInteger(parseChar(is)));
             }
-            else if (isValidSymbol(cc)) {
+            else {
                 tokens.emplace_back(new TokenSymbol(parseSymbol(is)));
             }
         }
