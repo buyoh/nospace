@@ -114,8 +114,8 @@ func: main(){
   - The array size must be constant
   - A later update of the language may allow variable array sizes
 - `arr[1]` refers to the element at index 1
-- `arr` is synonymous `arr[0]`
-  - This is different from the C programming language
+- `arr` is synonymous with `arr[0]`
+  - This differs from the C programming language
 - The main feature of the language is that it requires no spaces, tabs,
   or line feeds
 
