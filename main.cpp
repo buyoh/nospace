@@ -267,6 +267,7 @@ namespace Parser {
 
 
     inline bool isValidSymbol(char c) {
+        // BUG: includes "
         static bool f[] = { 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0 };
         return 32 <= c ? f[c - 32] : false;
     }
@@ -296,6 +297,7 @@ namespace Parser {
         int c2 = is.peek();
 
         if (c1 == '|') {
+            // BUG: allows |
             if (c2 == '|') { is.get(); return TokenSymbol('|', '|'); }
         }
         if (c1 == '&') {
@@ -803,11 +805,11 @@ namespace Compiler {
                 else {
                     // variable
                     if (!nameTable.includeEntire(tokenKeyword.str()))
-                        throw CompileException();
+                        throw CompileException(stream, "undefined identifier");
 
                     const auto& ref = nameTable.getEntire(tokenKeyword.str());
                     if (!typeis<NameEntryVariable>(ref.first))
-                        throw CompileException();
+                        throw CompileException(stream, "it is not a variable");
                     return make_unique<FactorVariable>(ref.second->isGlobal() ? 0 : 1, ref.first.address());
                 }
 
@@ -928,17 +930,13 @@ namespace Compiler {
                 auto& o = static_cast<Operation&>(*stV);
                 assert_throw<CompileException>(
                     o.id() == Embedded::Function::IDdereference,
-                    stream, "must be a dereference or a variable");
+                    stream, "must be a variable or a dereference");
                 auto stOp = make_unique<Operation>(Embedded::Function::IDindexer, 2);
                 stOp->args(0) = move(o.args(0));
                 stOp->args(1) = move(index);
                 return stOp;
             }
-            else {
-                Operation stOp(Embedded::Function::IDaminus, 1);
-                stOp.args(0) = move(stV);
-                return make_unique<Operation>(move(stOp));
-            }
+            throw CompileException(stream, "must be a variable or a dereference");
         }
         else {
             return stV;
@@ -1267,19 +1265,21 @@ namespace Compiler {
 
         auto localScope = make_unique<StatementScope>(localNameTable);
 
-        if (!globalScope) stream.get();
+        if (!globalScope) assert_token<TokenSymbol, CompileException>(stream.get(), '{', stream, "expected {");
 
         while (true) {
             if (stream.eof()) {
                 if (!globalScope) throw CompileException(stream, "missing }");
                 break;
             }
-            auto& token = stream.peek();
 
-            if (typeis<TokenSymbol>(token)) {
-                auto& tokenSymbol = static_cast<const TokenSymbol&>(token);
-                if (tokenSymbol == '}') {
-                    stream.get(); break;
+            if (!globalScope) {
+                auto& token = stream.peek();
+                if (typeis<TokenSymbol>(token)) {
+                    auto& tokenSymbol = static_cast<const TokenSymbol&>(token);
+                    if (tokenSymbol == '}') {
+                        stream.get(); break;
+                    }
                 }
             }
 
@@ -1383,7 +1383,7 @@ namespace Compiler {
         auto& funcName = dynamic_cast<const TokenKeyword&>(stream.get());
         if (nameTable->includeLocal(funcName.str()) ||
             reservedNameTable.include(funcName.str())) {
-            throw CompileException();
+            throw CompileException(stream, "function is reserved");
         }
 
         assert_token<TokenSymbol, CompileException>(stream.get(), '(', stream, "expected (");
@@ -1405,7 +1405,7 @@ namespace Compiler {
             auto& varName = dynamic_cast<const TokenKeyword&>(token);
             if (nameTable->includeLocal(funcName.str()) ||
                 reservedNameTable.include(funcName.str())) {
-                throw CompileException();
+                throw CompileException(stream, "variable is already defined");
             }
             argStrs.push_back(varName.str());
 
@@ -1480,7 +1480,7 @@ namespace Compiler {
     unique_ptr<StatementReturn> getStatementReturn(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
         stream.get(); // assert_token<TokenKeyword, CompileException>(stream.get(), "return", stream, "expected return");
 
-        assert_throw<CompileException>(typeis<TokenSymbol>(stream.peek()), stream, "expected )");
+        assert_throw<CompileException>(typeis<TokenSymbol>(stream.peek()), stream, "expected ;");
         auto& token = static_cast<const TokenSymbol&>(stream.peek());
 
         if (token == ':') {
@@ -1502,10 +1502,7 @@ namespace Compiler {
 
         if (stream.eof()) throw CompileException(stream, "has reached eof");
         auto& token = stream.peek();
-        if (typeis<TokenSymbol>(token)) {
-            // ...
-        }
-        else if (typeis<TokenKeyword>(token)) {
+        if (typeis<TokenKeyword>(token)) {
             auto& tokenKeyword = static_cast<const TokenKeyword&>(token);
             if (tokenKeyword == "func") {
                 if (disableFunc) throw CompileException(stream, "can't define function");
@@ -1519,10 +1516,7 @@ namespace Compiler {
 
         if (disableExpr) throw CompileException(stream, "syntax error");;
 
-        if (typeis<TokenSymbol>(token)) {
-            // ...
-        }
-        else if (typeis<TokenKeyword>(token)) {
+        if (typeis<TokenKeyword>(token)) {
             auto& tokenKeyword = static_cast<const TokenKeyword&>(token);
             if (tokenKeyword == "if") {
                 return getStatementIf(stream, nameTable, false);
