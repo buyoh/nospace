@@ -1,9 +1,6 @@
+# Nospace Tutorial
 
-# tutorial(nospace-whitespace)
-
-##
-
-### Hello World
+## Hello World
 
 ```
 func: main() {
@@ -29,10 +26,10 @@ func: main() {
   - タブは `\t`
   - `'` は `\'`
 
-### fibonatti
+## Fibonacci
 
 ```
-# calculate fibonatti(n)
+# calculate fibonacci(n)
 func: fibo(n) {
     if (n < 0) {
         return: 0;
@@ -66,8 +63,7 @@ func: main() {
 - `__geti()` で数字を読み込む
   - whitespace interpreter側の実装依存でhaskell版では改行区切り
 
-
-### swap
+## Swap
 
 ```
 func: swap(p, q) {
@@ -88,7 +84,7 @@ func: main() {
 - `*p` は `p` をデリファレンスする
 - `let` 宣言の時 `a(1)` で変数 `a` を `1` に初期化する
 
-### rotate array
+## Rotate Array
 
 ```
 func:swap(p,q){let:t;t=*p;*p=*q;*q=t;}
@@ -122,7 +118,7 @@ func: main(){
   - C言語と異なる
 - 空白改行タブを一切含めること無く記述できるのが本言語の下らない特徴
 
-### sorting(quick sort)
+## Sorting (Quick Sort)
 
 ```
 func: swap(p, q) {

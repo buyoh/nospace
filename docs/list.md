@@ -1,44 +1,43 @@
+# Keywords and Operators
 
-# list.md
-
-### declaration
+## Declarations
 
 - `func`
 - `let`
 
-### flow control
+## Flow Control
 
 - `if`, `elsif`, `else`
 - `while`
 - `return`
 
-### operation
+## Operators
 
-#### arithmetic
+### Arithmetic
 
 - `+`, `-`, `*`, `/`, `%`
 - `+=`, `-=`, `*=`, `/=`, `%=`
 - `-`
 
-#### assign
+### Assignment
 
 - `=`
 
-#### comparator
+### Comparisons
 
 - `==`, `!=`, `<`, `<=`, `>`, `>=`
 
-#### logical operator
+### Logical Operators
 
 - `&&`, `||`
 - `!`
 
-#### reference, dereference
+### Reference and Dereference
 
 - `&`
 - `*`
 
-### embedded function
+## Built-in Functions
 
 - `__puti(val)`, `__putc(val)`
 - `__geti()`, `__getc()`
