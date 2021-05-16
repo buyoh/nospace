@@ -1,0 +1,14 @@
+# https://github.com/buyoh/nospace/issues/1
+func:main(){
+  __putc('0' + 1);
+  __putc('0'+2);
+  __putc(('0') + 3);
+  __putc( '0'+ 4 );
+
+  __putc(5 + '0');
+  __putc(6+'0');
+
+  __putc(48 + 7);
+  __putc(48+8);
+  __putc((48) + 9);
+}

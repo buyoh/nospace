@@ -373,6 +373,7 @@ namespace Parser {
             }
             if (cc == '\'') {
                 tokens.emplace_back(new TokenInteger(parseChar(is)));
+                continue;
             }
             if (isValidSymbol(cc)) {
                 tokens.emplace_back(new TokenSymbol(parseSymbol(is)));
