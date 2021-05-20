@@ -1,12 +1,12 @@
 
 def compile(path_in, path_out)
-    system "./maicomp < #{path_in} 1> #{path_out} 2> ./temp/cmpstderr.log"
+    system "./maicomp #{path_in} 1> #{path_out} 2> ./temp/cmpstderr.log"
     abort "failed: compilation" if $? != 0
     true
 end
 
 def vm_exec(path_code, path_stdin)
-    system("ruby ./run.rb ../#{path_code} ../#{path_stdin} 1> .././temp/runstdout.log 2> .././temp/runstderr.log", {chdir: './vm'}) 
+    system("ruby ./vm/run.rb #{path_code} #{path_stdin} 1> ./temp/runstdout.log 2> ./temp/runstderr.log") 
 end
 
 arg_skip = 0

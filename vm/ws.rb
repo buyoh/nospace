@@ -48,12 +48,12 @@ module WhitespaceCompiler
         if c1 == :sp
             c2 = readchar(io)
             return [:stk_push, parse_int(io)] if c2 == :sp
-            if c2 == :lf
-                c3 = readchar(io)
-                return [:stk_dup] if c3 == :sp
-                return [:stk_swap] if c3 == :tb
-                return [:stk_del] if c3 == :lf
-            end
+            c3 = readchar(io)
+            return [:stk_copy, parse_int(io)]  if c2 == :tb && c3 == :sp
+            return [:stk_slide, parse_int(io)] if c2 == :tb && c3 == :lf
+            return [:stk_dup]  if c2 == :lf && c3 == :sp
+            return [:stk_swap] if c2 == :lf && c3 == :tb
+            return [:stk_del]  if c2 == :lf && c3 == :lf
         elsif c1 == :lf
             c2 = readchar(io)
             c3 = readchar(io)
@@ -62,8 +62,8 @@ module WhitespaceCompiler
             return [:flw_jump,  parse_int(io)] if c2 == :sp && c3 == :lf
             return [:flw_jumpz, parse_int(io)] if c2 == :tb && c3 == :sp
             return [:flw_jumpn, parse_int(io)] if c2 == :tb && c3 == :tb
-            return [:flw_ret]                   if c2 == :tb && c3 == :lf
-            return [:flw_exit]                  if c2 == :lf && c3 == :lf
+            return [:flw_ret]                  if c2 == :tb && c3 == :lf
+            return [:flw_exit]                 if c2 == :lf && c3 == :lf
         elsif c1 == :tb
             c2 = readchar(io)
             if c2 == :sp
@@ -81,8 +81,8 @@ module WhitespaceCompiler
             elsif c2 == :lf
                 c3 = readchar(io)
                 c4 = readchar(io)
-                return [:iop_outc] if c3 == :sp && c4 == :sp
-                return [:iop_outn] if c3 == :sp && c4 == :tb
+                return [:iop_outc]  if c3 == :sp && c4 == :sp
+                return [:iop_outn]  if c3 == :sp && c4 == :tb
                 return [:iop_readc] if c3 == :tb && c4 == :sp
                 return [:iop_readn] if c3 == :tb && c4 == :tb
             end
@@ -144,7 +144,6 @@ class WhitespaceInterpreter
         @stack = []
         @heap = []
         @callstack = []
-        @stdout = ''
         self
     end
     
@@ -192,6 +191,16 @@ class WhitespaceInterpreter
     def stk_del(_)
         raise WhitespaceRuntimeError.new(self) if @stack.size < 1
         @stack.pop()
+    end
+    def stk_copy(n)
+        raise WhitespaceRuntimeError.new(self) if @stack.size < n + 1
+        @stack.push(@stack[-n-1])
+        @pc += 1
+    end
+    def stk_slide(n)
+        raise WhitespaceRuntimeError.new(self) if @stack.size < n + 1
+        @stack = @stack[0, @stack.length-n-1].push(@stack[-1])
+        @pc += 1
     end
     
     def flw_label(label)
@@ -267,11 +276,11 @@ class WhitespaceInterpreter
     
     def iop_outc(_)
         raise WhitespaceRuntimeError.new(self) if @stack.size < 1
-        @stdout << ("%c"%(@stack.pop))
+        print "%c"%(@stack.pop)
     end
     def iop_outn(_)
         raise WhitespaceRuntimeError.new(self) if @stack.size < 1
-        @stdout << @stack.pop.to_s
+        print @stack.pop.to_s
     end
     def iop_readc(_)
         raise WhitespaceRuntimeError.new(self) if @stack.size < 1

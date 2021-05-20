@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <list>
 #include <memory>
@@ -72,8 +73,10 @@ namespace WS {
         namespace Stack {
             const Chr push[] = { Chr::SP, Chr::SP }; // prm
             const Chr duplicate[] = { Chr::SP, Chr::LF, Chr::SP };
+            const Chr copy[] = { Chr::SP, Chr::TB, Chr::SP }; // prm
             const Chr swap[] = { Chr::SP, Chr::LF, Chr::TB };
             const Chr discard[] = { Chr::SP, Chr::LF, Chr::LF };
+            // const Chr slide[] = { Chr::SP, Chr::TB, Chr::LF }; // prm
         }
         namespace Arithmetic {
             const Chr add[] = { Chr::TB, Chr::SP, Chr::SP, Chr::SP };
@@ -264,12 +267,6 @@ namespace Parser {
     };
 
 
-    inline bool isValidSymbol(char c) {
-        static bool f[] = { 0, 1, 1, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0, 0 };
-        return 32 <= c ? f[c - 32] : false;
-    }
-
-
     TokenInteger parseInteger(istream& is) {
         integer var = 0;
         int cc = is.peek();
@@ -293,20 +290,25 @@ namespace Parser {
         int c1 = is.get();
         int c2 = is.peek();
 
-        if (c1 == '|') {
-            if (c2 == '|') { is.get(); return TokenSymbol('|', '|'); }
+        if (c1 == '|' && c2 == '|') {
+            is.get(); return TokenSymbol('|', '|');
         }
         if (c1 == '&') {
             if (c2 == '&') { is.get(); return TokenSymbol('&', '&'); }
+            return TokenSymbol('&');
         }
-        if (c2 == '=') {
-            if (c1 == '+' || c1 == '-' || c1 == '*' || c1 == '/' || c1 == '%' ||
-                c1 == '=' || c1 == '!' || c1 == '<' || c1 == '>') {
+        if (c1 == '+' || c1 == '-' || c1 == '*' || c1 == '/' || c1 == '%' ||
+            c1 == '=' || c1 == '!' || c1 == '<' || c1 == '>') {
+            if (c2 == '=') {
                 is.get(); return TokenSymbol(c1, '=');
             }
+            return TokenSymbol(c1);
         }
-
-        return TokenSymbol(c1);
+        if (c1 == '(' || c1 == ')' || c1 == '[' || c1 == ']' ||
+            c1 == '{' || c1 == '}' || c1 == ':' || c1 == ';' || c1 == ',') {
+            return TokenSymbol(c1);
+        }
+        throw ParseException("invalid symbol");
     }
 
 
@@ -315,10 +317,11 @@ namespace Parser {
         is.get(); // '
 
         integer var = 0;
-        int cc = is.peek();
+        int cc;
         bool escape = false;
 
         while (cc = is.get(), escape || cc != '\'') {
+            if (is.eof()) throw ParseException("missing [']");
             if (!escape) {
                 if (cc == '\\') escape = true;
                 else var = (var << 8ll) | integer(cc);
@@ -332,7 +335,6 @@ namespace Parser {
                 else throw ParseException("unknown escape char");
                 escape = false;
             }
-            if (is.eof()) throw ParseException("missing [']");
         }
 
         return TokenInteger(var);
@@ -351,35 +353,30 @@ namespace Parser {
         vector<unique_ptr<Token>> tokens;
         tokens.reserve(24);
 
-        while (!is.eof()) {
+        while (true) {
             int cc = is.peek();
+            if (is.eof()) {
+                break;
+            }
 
             if (cc == '#') {
                 parseLineCommentOut(is);
-                continue;
             }
-
-            if (isspace(cc)) {
+            else if (isspace(cc)) {
                 is.get();
-                continue;
             }
-            if (isdigit(cc)) {
+            else if (isdigit(cc)) {
                 tokens.emplace_back(new TokenInteger(parseInteger(is)));
-                continue;
             }
-            if (isalpha(cc) || cc == '_') {
+            else if (isalpha(cc) || cc == '_') {
                 tokens.emplace_back(new TokenKeyword(parseKeyword(is)));
-                continue;
             }
-            if (cc == '\'') {
+            else if (cc == '\'') {
                 tokens.emplace_back(new TokenInteger(parseChar(is)));
-                continue;
             }
-            if (isValidSymbol(cc)) {
+            else {
                 tokens.emplace_back(new TokenSymbol(parseSymbol(is)));
-                continue;
             }
-            is.get(); // ignore
         }
         return tokens;
     }
@@ -809,11 +806,11 @@ namespace Compiler {
                 else {
                     // variable
                     if (!nameTable.includeEntire(tokenKeyword.str()))
-                        throw CompileException();
+                        throw CompileException(stream, "undefined identifier");
 
                     const auto& ref = nameTable.getEntire(tokenKeyword.str());
                     if (!typeis<NameEntryVariable>(ref.first))
-                        throw CompileException();
+                        throw CompileException(stream, "it is not a variable");
                     return make_unique<FactorVariable>(ref.second->isGlobal() ? 0 : 1, ref.first.address());
                 }
 
@@ -930,21 +927,17 @@ namespace Compiler {
                 return stOp;
             }
             else if (typeis<Operation>(*stV)) {
-                // derefference
+                // dereference
                 auto& o = static_cast<Operation&>(*stV);
                 assert_throw<CompileException>(
                     o.id() == Embedded::Function::IDdereference,
-                    stream, "must be a derefference or a variable");
+                    stream, "must be a variable or a dereference");
                 auto stOp = make_unique<Operation>(Embedded::Function::IDindexer, 2);
                 stOp->args(0) = move(o.args(0));
                 stOp->args(1) = move(index);
                 return stOp;
             }
-            else {
-                Operation stOp(Embedded::Function::IDaminus, 1);
-                stOp.args(0) = move(stV);
-                return make_unique<Operation>(move(stOp));
-            }
+            throw CompileException(stream, "must be a variable or a dereference");
         }
         else {
             return stV;
@@ -1196,8 +1189,6 @@ namespace Compiler {
 
         StatementScope(shared_ptr<NameTable>& _nameTable) :nameTable(_nameTable), statements() { }
         StatementScope(shared_ptr<NameTable>&& _nameTable) :nameTable(move(_nameTable)), statements() { }
-
-
     };
 
 
@@ -1275,19 +1266,21 @@ namespace Compiler {
 
         auto localScope = make_unique<StatementScope>(localNameTable);
 
-        if (!globalScope) stream.get();
+        if (!globalScope) assert_token<TokenSymbol, CompileException>(stream.get(), '{', stream, "expected {");
 
         while (true) {
             if (stream.eof()) {
                 if (!globalScope) throw CompileException(stream, "missing }");
                 break;
             }
-            auto& token = stream.peek();
 
-            if (typeis<TokenSymbol>(token)) {
-                auto& tokenSymbol = static_cast<const TokenSymbol&>(token);
-                if (tokenSymbol == '}') {
-                    stream.get(); break;
+            if (!globalScope) {
+                auto& token = stream.peek();
+                if (typeis<TokenSymbol>(token)) {
+                    auto& tokenSymbol = static_cast<const TokenSymbol&>(token);
+                    if (tokenSymbol == '}') {
+                        stream.get(); break;
+                    }
                 }
             }
 
@@ -1391,7 +1384,7 @@ namespace Compiler {
         auto& funcName = dynamic_cast<const TokenKeyword&>(stream.get());
         if (nameTable->includeLocal(funcName.str()) ||
             reservedNameTable.include(funcName.str())) {
-            throw CompileException();
+            throw CompileException(stream, "function is reserved");
         }
 
         assert_token<TokenSymbol, CompileException>(stream.get(), '(', stream, "expected (");
@@ -1413,7 +1406,7 @@ namespace Compiler {
             auto& varName = dynamic_cast<const TokenKeyword&>(token);
             if (nameTable->includeLocal(funcName.str()) ||
                 reservedNameTable.include(funcName.str())) {
-                throw CompileException();
+                throw CompileException(stream, "variable is already defined");
             }
             argStrs.push_back(varName.str());
 
@@ -1488,7 +1481,7 @@ namespace Compiler {
     unique_ptr<StatementReturn> getStatementReturn(TokenStream& stream, shared_ptr<NameTable>& nameTable) {
         stream.get(); // assert_token<TokenKeyword, CompileException>(stream.get(), "return", stream, "expected return");
 
-        assert_throw<CompileException>(typeis<TokenSymbol>(stream.peek()), stream, "expected )");
+        assert_throw<CompileException>(typeis<TokenSymbol>(stream.peek()), stream, "expected ;");
         auto& token = static_cast<const TokenSymbol&>(stream.peek());
 
         if (token == ':') {
@@ -1510,10 +1503,7 @@ namespace Compiler {
 
         if (stream.eof()) throw CompileException(stream, "has reached eof");
         auto& token = stream.peek();
-        if (typeis<TokenSymbol>(token)) {
-            // ...
-        }
-        else if (typeis<TokenKeyword>(token)) {
+        if (typeis<TokenKeyword>(token)) {
             auto& tokenKeyword = static_cast<const TokenKeyword&>(token);
             if (tokenKeyword == "func") {
                 if (disableFunc) throw CompileException(stream, "can't define function");
@@ -1527,10 +1517,7 @@ namespace Compiler {
 
         if (disableExpr) throw CompileException(stream, "syntax error");;
 
-        if (typeis<TokenSymbol>(token)) {
-            // ...
-        }
-        else if (typeis<TokenKeyword>(token)) {
+        if (typeis<TokenKeyword>(token)) {
             auto& tokenKeyword = static_cast<const TokenKeyword&>(token);
             if (tokenKeyword == "if") {
                 return getStatementIf(stream, nameTable, false);
@@ -1612,11 +1599,10 @@ namespace Builder {
     // *destPtr = *fromPtr
     WhiteSpace& convertCopy(WhiteSpace& whitesp, integer destPtr, integer fromPtr) {
         whitesp.push(Instruments::Stack::push);
+        pushInteger(whitesp, integer(destPtr));
+        whitesp.push(Instruments::Stack::push);
         pushInteger(whitesp, integer(fromPtr));
         whitesp.push(Instruments::Heap::retrieve);
-        whitesp.push(Instruments::Stack::push);
-        pushInteger(whitesp, integer(destPtr));
-        whitesp.push(Instruments::Stack::swap);
         whitesp.push(Instruments::Heap::store);
         return whitesp;
     }
@@ -1634,20 +1620,18 @@ namespace Builder {
         // - local_begin := local_end．(dup local_end)
         whitesp.push(Instruments::Stack::push);
         pushInteger(whitesp, Alignment::LocalHeapEnd);
+        whitesp.push(Instruments::Stack::duplicate);
         whitesp.push(Instruments::Heap::retrieve);
-        whitesp.push(Instruments::Stack::duplicate); // dup!
         whitesp.push(Instruments::Stack::push);
         pushInteger(whitesp, Alignment::LocalHeapBegin);
-        whitesp.push(Instruments::Stack::swap);
+        whitesp.push(Instruments::Stack::copy); // retrieve local_end
+        pushInteger(whitesp, integer(1));
         whitesp.push(Instruments::Heap::store);
         // remain local_begin value on stack.
         // - local_end := local_begin(stacked by dup) + scopesize．
         whitesp.push(Instruments::Stack::push);
         pushInteger(whitesp, func.nameTable->localHeapSize());
         whitesp.push(Instruments::Arithmetic::add);
-        whitesp.push(Instruments::Stack::push);
-        pushInteger(whitesp, Alignment::LocalHeapEnd);
-        whitesp.push(Instruments::Stack::swap);
         whitesp.push(Instruments::Heap::store);
         return whitesp;
     }
@@ -1710,7 +1694,7 @@ namespace Builder {
             const auto& var = static_cast<const FactorVariable&>(factor);
             // calculate addr
             convertCalculateLocalVariablePtr(whitesp, var);
-            // retirieve
+            // retrieve
             whitesp.push(Instruments::Heap::retrieve);
             return whitesp;
         }
@@ -1785,9 +1769,8 @@ namespace Builder {
             pushInteger(whitesp, integer(1)); // neg
             whitesp.push(Instruments::Stack::push);
             pushInteger(whitesp, integer(0)); // notneg
-            convertExpression(whitesp, exps[0]);
             convertExpression(whitesp, exps[1]);
-            whitesp.push(Instruments::Stack::swap);
+            convertExpression(whitesp, exps[0]);
             whitesp.push(Instruments::Arithmetic::sub);
 
             whitesp.push(Instruments::Flow::call);
@@ -1799,9 +1782,8 @@ namespace Builder {
             pushInteger(whitesp, integer(0)); // neg
             whitesp.push(Instruments::Stack::push);
             pushInteger(whitesp, integer(1)); // notneg
-            convertExpression(whitesp, exps[0]);
             convertExpression(whitesp, exps[1]);
-            whitesp.push(Instruments::Stack::swap);
+            convertExpression(whitesp, exps[0]);
             whitesp.push(Instruments::Arithmetic::sub);
 
             whitesp.push(Instruments::Flow::call);
@@ -1964,18 +1946,16 @@ namespace Builder {
         case Embedded::Function::IDgeti: {
             whitesp.push(Instruments::Stack::push);
             pushInteger(whitesp, Alignment::TempPtr);
+            whitesp.push(Instruments::Stack::duplicate);
             whitesp.push(Instruments::IO::getnumber);
-            whitesp.push(Instruments::Stack::push);
-            pushInteger(whitesp, Alignment::TempPtr);
             whitesp.push(Instruments::Heap::retrieve);
             return whitesp;
         }
         case Embedded::Function::IDgetc: {
             whitesp.push(Instruments::Stack::push);
             pushInteger(whitesp, Alignment::TempPtr);
+            whitesp.push(Instruments::Stack::duplicate);
             whitesp.push(Instruments::IO::getchar);
-            whitesp.push(Instruments::Stack::push);
-            pushInteger(whitesp, Alignment::TempPtr);
             whitesp.push(Instruments::Heap::retrieve);
             return whitesp;
         }
@@ -2158,9 +2138,8 @@ namespace Builder {
                 return whitesp;
             }
             case Embedded::Function::IDlesseq: {
-                convertExpression(whitesp, op[0]);
                 convertExpression(whitesp, op[1]);
-                whitesp.push(Instruments::Stack::swap);
+                convertExpression(whitesp, op[0]);
                 whitesp.push(Instruments::Arithmetic::sub);
                 whitesp.push(Instruments::Flow::negativejump);
                 pushInteger(whitesp, label + 1);
@@ -2402,7 +2381,15 @@ int main(int argc, char** argv) {
 
     // analysis
 
-    TokenStream tokenStream(parseToTokens(cin));
+    TokenStream tokenStream;
+    if (argc > 1) {
+        fstream file(argv[1]);
+        tokenStream = parseToTokens(file);
+        file.close();
+    }
+    else {
+        tokenStream = parseToTokens(cin);
+    }
 
     auto dmy = make_shared<NameTable>();
     StatementScope globalScope = move(*getStatementsScope(tokenStream, dmy, true));
