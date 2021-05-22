@@ -53,7 +53,7 @@ func: main() {
   - Returns 0, if omitted
 - `if`
 - `elsif` instead of `else if`
-- Start a line comment with `#`
+- Create a comment with `# comment #`
 - Declare variables with `let`
 - Variables declared within a function are locally-scoped
 - Variables declared outside a function are globally-scoped

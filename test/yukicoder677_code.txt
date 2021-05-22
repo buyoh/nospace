@@ -3,7 +3,7 @@ func: swap(p, q) {
     let: t;
     t = *p; *p = *q; *q = t;
 }
-# optimized
+# optimized #
 func: qsort(begin, end) {
     if (end - begin <= 1) { return; }
     if (end - begin == 2) {

@@ -341,10 +341,10 @@ namespace Parser {
     }
 
 
-    void parseLineCommentOut(istream& is) {
-        while (!is.eof()) {
-            int cc = is.get();
-            if (cc == '\r' || cc == '\n') break;
+    void parseCommentOut(istream& is) {
+        is.get(); // #
+        while (is.get() != '#') {
+            if (is.eof()) throw ParseException("missing [#]");
         }
     }
 
@@ -360,7 +360,7 @@ namespace Parser {
             }
 
             if (cc == '#') {
-                parseLineCommentOut(is);
+                parseCommentOut(is);
             }
             else if (isspace(cc)) {
                 is.get();

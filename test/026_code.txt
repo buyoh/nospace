@@ -1,6 +1,6 @@
 
 func:main(){
-    # Quoted literals can contain multiple characters.
+    # Quoted literals can contain multiple characters. #
     let:pi('PIpi\nPie' + 't6`j($na');
 
     __puti(3); __putc('.'); __puti(pi);

@@ -10,6 +10,6 @@ func:main(){
     b = &a;
     __puti((*b)[3]);
 
-    # invalid
-    # *(&a[1]) = 1
+    # invalid #
+    # *(&a[1]) = 1 #
 }

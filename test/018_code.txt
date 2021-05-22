@@ -10,7 +10,7 @@ func:main(){
     __puti(__getc() == '\\');
     __puti(__getc() == '\t');
     __puti(__getc() == '.');
-    __puti(__getc() == 0); # CR = 13
+    __puti(__getc() == 0); # CR = 13 #
     __puti(__getc() == '\n');
     __puti(__getcv(&c) == 'X');
     __puti(c == 'X');
