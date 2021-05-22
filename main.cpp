@@ -324,6 +324,9 @@ namespace Parser {
             if (is.eof()) throw ParseException("missing [']");
             if (!escape) {
                 if (cc == '\\') escape = true;
+                else if (cc == '\t') throw ParseException("unescaped tab");
+                else if (cc == '\n') throw ParseException("unescaped LF");
+                else if (cc == ' ') throw ParseException("unescaped space");
                 else var = (var << 8ll) | integer(cc);
             }
             else {

@@ -6,7 +6,6 @@ func:main(){
     __puti(__getc() == '+');
     __puti(__getc() == '\'');
     __puti(__getc() == '\s');
-    __puti(__getc() == ' ');
     __puti(__getc() == '\\');
     __puti(__getc() == '\t');
     __puti(__getc() == '.');
