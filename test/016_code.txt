@@ -1,20 +1,20 @@
 
 func:a(){
-    __putc(65); # A
+    __putc(65); # A #
 }
 
 func:b(){
-    __putc(66); # B
+    __putc(66); # B #
     a();
 }
 
 func:c(){
-    __putc(67); # C
+    __putc(67); # C #
     b();
 }
 
 func:d(){
-    __putc(68); # D
+    __putc(68); # D #
     b();c();
 }
 

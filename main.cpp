@@ -324,6 +324,9 @@ namespace Parser {
             if (is.eof()) throw ParseException("missing [']");
             if (!escape) {
                 if (cc == '\\') escape = true;
+                else if (cc == '\t') throw ParseException("unescaped tab");
+                else if (cc == '\n') throw ParseException("unescaped LF");
+                else if (cc == ' ') throw ParseException("unescaped space");
                 else var = (var << 8ll) | integer(cc);
             }
             else {
@@ -341,10 +344,10 @@ namespace Parser {
     }
 
 
-    void parseLineCommentOut(istream& is) {
-        while (!is.eof()) {
-            int cc = is.get();
-            if (cc == '\r' || cc == '\n') break;
+    void parseCommentOut(istream& is) {
+        is.get(); // #
+        while (is.get() != '#') {
+            if (is.eof()) throw ParseException("missing [#]");
         }
     }
 
@@ -360,7 +363,7 @@ namespace Parser {
             }
 
             if (cc == '#') {
-                parseLineCommentOut(is);
+                parseCommentOut(is);
             }
             else if (isspace(cc)) {
                 is.get();

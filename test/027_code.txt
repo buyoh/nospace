@@ -1,8 +1,8 @@
 
 func:main(){
-  # The built-in functions also can be used as expressions.
-  # __puti, __putc, __geti, and __getc return their arguments.
-  # __getiv and __getcv return the value that was read.
+  # The built-in functions also can be used as expressions. #
+  # __puti, __putc, __geti, and __getc return their arguments. #
+  # __getiv and __getcv return the value that was read. #
   let:x(__puti('') + __puti(1));
   __putc(3 + __putc('9' - __puti(-__putc(__putc(__getc()/2) + x) + __getiv(0)*(*0+x)-x)) / *'');
 }
