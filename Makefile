@@ -6,8 +6,10 @@ debug: maicomp
 release: CXXFLAGS := -O3
 release: maicomp
 
+CPPSTD ?= c++17
+
 maicomp: main.cpp
-	g++ -std=c++17 $(CXXFLAGS) main.cpp -o maicomp
+	$(CXX) -std=$(CPPSTD) $(CXXFLAGS) main.cpp -o maicomp
 
 clean:
 	rm -rf maicomp maicomp.dSYM

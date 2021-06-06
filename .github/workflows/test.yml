@@ -1,0 +1,39 @@
+name: test
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: ["ubuntu-18.04", "ubuntu-latest"]
+        ruby: ["2.7", "3.0"]
+        cc: ["g++", "clang++"]
+        # we don't support c++11
+        std: ["c++14", "c++1z", "c++2a"]
+        exclude:
+          - os: "ubuntu-18.04"
+            std: "c++2a"
+          - os: "ubuntu-18.04"
+            cc: "clang++"
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions/setup-ruby@v1
+        with:
+          ruby-version: ${{ matrix.ruby }}
+      - name: get git submodules
+        run: |
+          git submodule init
+          git submodule update
+      - name: install packages
+        run: |
+          sudo apt install g++ clang
+      - name: build
+        run: |
+          CXX=${{matrix.cc}} CPPSTD=${{matrix.std}} make debug
+      - name: test
+        run: |
+          ruby ./test.rb
