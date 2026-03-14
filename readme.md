@@ -1,6 +1,8 @@
 
 # Nospace
 
+**This project is deprecated.** The latest repository is available in https://github.com/buyoh/nospace20 as Rust!
+
 nospace to whitespace
 
 nospace とは、esolang である whitespace を改行、タブ・半角スペース等の空白無しで記述することを目標にした言語及びコンパイラです。
